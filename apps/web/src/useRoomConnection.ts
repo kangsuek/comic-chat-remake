@@ -1,0 +1,72 @@
+import {
+  clientActionSchema,
+  serverMessageSchema,
+  type ClientAction,
+  type HistoryEntry,
+  type Member,
+} from "@comic-chat/protocol";
+import { useCallback, useEffect, useRef, useState } from "react";
+
+export type ConnectionStatus = "connecting" | "open" | "closed";
+
+export interface RoomConnection {
+  status: ConnectionStatus;
+  members: Member[];
+  entries: HistoryEntry[];
+  join: (nick: string) => void;
+  say: (text: string) => void;
+}
+
+/** WS 연결을 유지하며 서버 브로드캐스트(historyEntry/memberList)로 상태를 갱신하는 훅. */
+export function useRoomConnection(url: string): RoomConnection {
+  const wsRef = useRef<WebSocket | null>(null);
+  const [status, setStatus] = useState<ConnectionStatus>("connecting");
+  const [members, setMembers] = useState<Member[]>([]);
+  const [entries, setEntries] = useState<HistoryEntry[]>([]);
+
+  useEffect(() => {
+    setStatus("connecting");
+    setMembers([]);
+    setEntries([]);
+
+    const ws = new WebSocket(url);
+    wsRef.current = ws;
+
+    ws.addEventListener("open", () => setStatus("open"));
+    ws.addEventListener("close", () => setStatus("closed"));
+    ws.addEventListener("message", (event) => {
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(event.data as string);
+      } catch {
+        return;
+      }
+      const result = serverMessageSchema.safeParse(parsed);
+      if (!result.success) return;
+
+      const message = result.data;
+      if (message.type === "memberList") {
+        setMembers(message.members);
+      } else {
+        setEntries((prev) => [...prev, message.entry]);
+      }
+    });
+
+    return () => {
+      ws.close();
+      wsRef.current = null;
+    };
+  }, [url]);
+
+  const sendAction = useCallback((action: ClientAction) => {
+    const ws = wsRef.current;
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify(clientActionSchema.parse(action)));
+    }
+  }, []);
+
+  const join = useCallback((nick: string) => sendAction({ type: "join", nick }), [sendAction]);
+  const say = useCallback((text: string) => sendAction({ type: "say", text }), [sendAction]);
+
+  return { status, members, entries, join, say };
+}

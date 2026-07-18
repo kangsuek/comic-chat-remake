@@ -1,0 +1,34 @@
+[
+  { "emotion": "SHOUT", "function": "AllCaps", "arg": "", "strength": 9 },
+  { "emotion": "SHOUT", "function": "FindString", "arg": "!!!", "strength": 9 },
+
+  { "emotion": "LAUGH", "function": "CheckWord", "arg": "ROTFL", "strength": 11 },
+  { "emotion": "LAUGH", "function": "CheckWord", "arg": "LOL", "strength": 11 },
+
+  { "emotion": "HAPPY", "function": "FindString", "arg": ":)", "strength": 10 },
+  { "emotion": "HAPPY", "function": "FindString", "arg": ":-)", "strength": 10 },
+
+  { "emotion": "SAD", "function": "FindString", "arg": ":(", "strength": 10 },
+  { "emotion": "SAD", "function": "FindString", "arg": ":-(", "strength": 10 },
+
+  { "emotion": "POINTOTHER", "function": "CheckStart", "arg": "You", "strength": 4 },
+  { "emotion": "POINTOTHER", "function": "CheckWord*", "arg": "are you", "strength": 8 },
+  { "emotion": "POINTOTHER", "function": "CheckWord*", "arg": "will you", "strength": 8 },
+  { "emotion": "POINTOTHER", "function": "CheckWord*", "arg": "did you", "strength": 8 },
+  { "emotion": "POINTOTHER", "function": "CheckWord*", "arg": "aren't you", "strength": 8 },
+  { "emotion": "POINTOTHER", "function": "CheckWord*", "arg": "don't you", "strength": 8 },
+
+  { "emotion": "POINTSELF", "function": "CheckStart", "arg": "I", "strength": 3 },
+  { "emotion": "POINTSELF", "function": "CheckWord*", "arg": "i'm", "strength": 7 },
+  { "emotion": "POINTSELF", "function": "CheckWord*", "arg": "i will", "strength": 7 },
+  { "emotion": "POINTSELF", "function": "CheckWord*", "arg": "i'll", "strength": 7 },
+  { "emotion": "POINTSELF", "function": "CheckWord*", "arg": "i am", "strength": 7 },
+
+  { "emotion": "WAVE", "function": "CheckStart*", "arg": "Hi", "strength": 2 },
+  { "emotion": "WAVE", "function": "CheckStart*", "arg": "Bye", "strength": 3 },
+  { "emotion": "WAVE", "function": "CheckStart*", "arg": "Hello", "strength": 5 },
+  { "emotion": "WAVE", "function": "CheckStart*", "arg": "Welcome", "strength": 5 },
+  { "emotion": "WAVE", "function": "CheckStart*", "arg": "Howdy", "strength": 5 },
+
+  { "emotion": "COY", "function": "FindString", "arg": ";-)", "strength": 10 }
+]
