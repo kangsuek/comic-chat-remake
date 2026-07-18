@@ -1,0 +1,184 @@
+{
+  "characterId": "jordan",
+  "name": "jordan",
+  "kind": "simple",
+  "flags": {
+    "headMask": true,
+    "torsoMask": false,
+    "torsoFirst": true
+  },
+  "icon": {
+    "poseIndex": 0,
+    "imagePath": "poses/0.png",
+    "width": 40,
+    "height": 40
+  },
+  "poses": [
+    {
+      "poseIndex": 0,
+      "imagePath": "poses/0.png",
+      "width": 40,
+      "height": 40
+    },
+    {
+      "poseIndex": 1,
+      "imagePath": "poses/1.png",
+      "width": 278,
+      "height": 429
+    },
+    {
+      "poseIndex": 2,
+      "imagePath": "poses/2.png",
+      "width": 232,
+      "height": 424
+    },
+    {
+      "poseIndex": 3,
+      "imagePath": "poses/3.png",
+      "width": 261,
+      "height": 434
+    },
+    {
+      "poseIndex": 4,
+      "imagePath": "poses/4.png",
+      "width": 291,
+      "height": 446
+    },
+    {
+      "poseIndex": 5,
+      "imagePath": "poses/5.png",
+      "width": 194,
+      "height": 471
+    },
+    {
+      "poseIndex": 6,
+      "imagePath": "poses/6.png",
+      "width": 231,
+      "height": 443
+    },
+    {
+      "poseIndex": 7,
+      "imagePath": "poses/7.png",
+      "width": 223,
+      "height": 420
+    },
+    {
+      "poseIndex": 8,
+      "imagePath": "poses/8.png",
+      "width": 214,
+      "height": 441
+    },
+    {
+      "poseIndex": 9,
+      "imagePath": "poses/9.png",
+      "width": 286,
+      "height": 439
+    },
+    {
+      "poseIndex": 10,
+      "imagePath": "poses/10.png",
+      "width": 288,
+      "height": 445
+    }
+  ],
+  "bodies": [
+    {
+      "poseIndex": 1,
+      "emotion": "POINTOTHER",
+      "intensity": 0,
+      "faceX": 133,
+      "faceY": 131
+    },
+    {
+      "poseIndex": 2,
+      "emotion": "POINTSELF",
+      "intensity": 0,
+      "faceX": 133,
+      "faceY": 131
+    },
+    {
+      "poseIndex": 2,
+      "emotion": "COY",
+      "intensity": 0.8,
+      "faceX": 133,
+      "faceY": 131
+    },
+    {
+      "poseIndex": 3,
+      "emotion": "ANGRY",
+      "intensity": 1,
+      "faceX": 133,
+      "faceY": 131
+    },
+    {
+      "poseIndex": 4,
+      "emotion": "BORED",
+      "intensity": 0.8,
+      "faceX": 133,
+      "faceY": 131
+    },
+    {
+      "poseIndex": 5,
+      "emotion": "LAUGH",
+      "intensity": 1,
+      "faceX": 133,
+      "faceY": 131
+    },
+    {
+      "poseIndex": 6,
+      "emotion": "WAVE",
+      "intensity": 0,
+      "faceX": 133,
+      "faceY": 131
+    },
+    {
+      "poseIndex": 7,
+      "emotion": "NEUTRAL",
+      "intensity": 0,
+      "faceX": 133,
+      "faceY": 131
+    },
+    {
+      "poseIndex": 7,
+      "emotion": "HAPPY",
+      "intensity": 0.4,
+      "faceX": 133,
+      "faceY": 131
+    },
+    {
+      "poseIndex": 8,
+      "emotion": "NEUTRAL",
+      "intensity": 0,
+      "faceX": 133,
+      "faceY": 131
+    },
+    {
+      "poseIndex": 8,
+      "emotion": "SCARED",
+      "intensity": 0.2,
+      "faceX": 133,
+      "faceY": 131
+    },
+    {
+      "poseIndex": 9,
+      "emotion": "NEUTRAL",
+      "intensity": 0,
+      "faceX": 133,
+      "faceY": 131
+    },
+    {
+      "poseIndex": 10,
+      "emotion": "SHOUT",
+      "intensity": 1,
+      "faceX": 133,
+      "faceY": 131
+    },
+    {
+      "poseIndex": 10,
+      "emotion": "SAD",
+      "intensity": 1,
+      "faceX": 133,
+      "faceY": 131
+    }
+  ]
+}

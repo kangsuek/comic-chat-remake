@@ -1,0 +1,345 @@
+{
+  "characterId": "bolo",
+  "name": "bolo",
+  "kind": "complex",
+  "flags": {
+    "headMask": true,
+    "torsoMask": false,
+    "torsoFirst": true
+  },
+  "icon": {
+    "poseIndex": 0,
+    "imagePath": "poses/0.png",
+    "width": 40,
+    "height": 40
+  },
+  "poses": [
+    {
+      "poseIndex": 0,
+      "imagePath": "poses/0.png",
+      "width": 40,
+      "height": 40
+    },
+    {
+      "poseIndex": 1,
+      "imagePath": "poses/1.png",
+      "width": 192,
+      "height": 156
+    },
+    {
+      "poseIndex": 2,
+      "imagePath": "poses/2.png",
+      "width": 189,
+      "height": 159
+    },
+    {
+      "poseIndex": 3,
+      "imagePath": "poses/3.png",
+      "width": 182,
+      "height": 169
+    },
+    {
+      "poseIndex": 4,
+      "imagePath": "poses/4.png",
+      "width": 199,
+      "height": 161
+    },
+    {
+      "poseIndex": 5,
+      "imagePath": "poses/5.png",
+      "width": 191,
+      "height": 153
+    },
+    {
+      "poseIndex": 6,
+      "imagePath": "poses/6.png",
+      "width": 196,
+      "height": 158
+    },
+    {
+      "poseIndex": 7,
+      "imagePath": "poses/7.png",
+      "width": 196,
+      "height": 161
+    },
+    {
+      "poseIndex": 8,
+      "imagePath": "poses/8.png",
+      "width": 193,
+      "height": 158
+    },
+    {
+      "poseIndex": 9,
+      "imagePath": "poses/9.png",
+      "width": 188,
+      "height": 160
+    },
+    {
+      "poseIndex": 10,
+      "imagePath": "poses/10.png",
+      "width": 211,
+      "height": 363
+    },
+    {
+      "poseIndex": 11,
+      "imagePath": "poses/11.png",
+      "width": 189,
+      "height": 373
+    },
+    {
+      "poseIndex": 12,
+      "imagePath": "poses/12.png",
+      "width": 239,
+      "height": 371
+    },
+    {
+      "poseIndex": 13,
+      "imagePath": "poses/13.png",
+      "width": 188,
+      "height": 366
+    },
+    {
+      "poseIndex": 14,
+      "imagePath": "poses/14.png",
+      "width": 189,
+      "height": 366
+    },
+    {
+      "poseIndex": 15,
+      "imagePath": "poses/15.png",
+      "width": 220,
+      "height": 351
+    },
+    {
+      "poseIndex": 16,
+      "imagePath": "poses/16.png",
+      "width": 222,
+      "height": 361
+    },
+    {
+      "poseIndex": 17,
+      "imagePath": "poses/17.png",
+      "width": 331,
+      "height": 379
+    },
+    {
+      "poseIndex": 18,
+      "imagePath": "poses/18.png",
+      "width": 215,
+      "height": 395
+    }
+  ],
+  "faces": [
+    {
+      "poseIndex": 1,
+      "emotion": "NEUTRAL",
+      "intensity": 0,
+      "xCX": 97,
+      "yCX": 128,
+      "deltaXCX": 2,
+      "deltaYCX": -5,
+      "faceX": 105,
+      "faceY": 97
+    },
+    {
+      "poseIndex": 1,
+      "emotion": "HAPPY",
+      "intensity": 0.2,
+      "xCX": 97,
+      "yCX": 128,
+      "deltaXCX": 2,
+      "deltaYCX": -5,
+      "faceX": 105,
+      "faceY": 97
+    },
+    {
+      "poseIndex": 1,
+      "emotion": "BORED",
+      "intensity": 0.2980392156862745,
+      "xCX": 97,
+      "yCX": 128,
+      "deltaXCX": 2,
+      "deltaYCX": -5,
+      "faceX": 105,
+      "faceY": 97
+    },
+    {
+      "poseIndex": 2,
+      "emotion": "HAPPY",
+      "intensity": 0.6,
+      "xCX": 95,
+      "yCX": 131,
+      "deltaXCX": 3,
+      "deltaYCX": -5,
+      "faceX": 100,
+      "faceY": 100
+    },
+    {
+      "poseIndex": 2,
+      "emotion": "NEUTRAL",
+      "intensity": 0,
+      "xCX": 95,
+      "yCX": 131,
+      "deltaXCX": 3,
+      "deltaYCX": -5,
+      "faceX": 100,
+      "faceY": 100
+    },
+    {
+      "poseIndex": 3,
+      "emotion": "HAPPY",
+      "intensity": 1,
+      "xCX": 86,
+      "yCX": 135,
+      "deltaXCX": 0,
+      "deltaYCX": -3,
+      "faceX": 99,
+      "faceY": 102
+    },
+    {
+      "poseIndex": 4,
+      "emotion": "COY",
+      "intensity": 1,
+      "xCX": 93,
+      "yCX": 126,
+      "deltaXCX": 0,
+      "deltaYCX": -6,
+      "faceX": 107,
+      "faceY": 100
+    },
+    {
+      "poseIndex": 5,
+      "emotion": "SAD",
+      "intensity": 1,
+      "xCX": 97,
+      "yCX": 123,
+      "deltaXCX": 6,
+      "deltaYCX": -3,
+      "faceX": 107,
+      "faceY": 93
+    },
+    {
+      "poseIndex": 6,
+      "emotion": "ANGRY",
+      "intensity": 1,
+      "xCX": 95,
+      "yCX": 129,
+      "deltaXCX": -1,
+      "deltaYCX": -5,
+      "faceX": 105,
+      "faceY": 99
+    },
+    {
+      "poseIndex": 7,
+      "emotion": "SHOUT",
+      "intensity": 1,
+      "xCX": 95,
+      "yCX": 131,
+      "deltaXCX": 3,
+      "deltaYCX": 0,
+      "faceX": 101,
+      "faceY": 92
+    },
+    {
+      "poseIndex": 8,
+      "emotion": "SCARED",
+      "intensity": 1,
+      "xCX": 97,
+      "yCX": 128,
+      "deltaXCX": 1,
+      "deltaYCX": -3,
+      "faceX": 106,
+      "faceY": 95
+    },
+    {
+      "poseIndex": 9,
+      "emotion": "LAUGH",
+      "intensity": 1,
+      "xCX": 93,
+      "yCX": 131,
+      "deltaXCX": 1,
+      "deltaYCX": -4,
+      "faceX": 103,
+      "faceY": 98
+    }
+  ],
+  "torsos": [
+    {
+      "poseIndex": 10,
+      "emotion": "NEUTRAL",
+      "intensity": 0,
+      "xCX": 107,
+      "yCX": 27
+    },
+    {
+      "poseIndex": 11,
+      "emotion": "POINTOTHER",
+      "intensity": 1,
+      "xCX": 89,
+      "yCX": 36
+    },
+    {
+      "poseIndex": 12,
+      "emotion": "POINTSELF",
+      "intensity": 1,
+      "xCX": 120,
+      "yCX": 35
+    },
+    {
+      "poseIndex": 13,
+      "emotion": "COY",
+      "intensity": 1,
+      "xCX": 94,
+      "yCX": 32
+    },
+    {
+      "poseIndex": 13,
+      "emotion": "NEUTRAL",
+      "intensity": 0,
+      "xCX": 94,
+      "yCX": 32
+    },
+    {
+      "poseIndex": 14,
+      "emotion": "SAD",
+      "intensity": 1,
+      "xCX": 111,
+      "yCX": 30
+    },
+    {
+      "poseIndex": 15,
+      "emotion": "NEUTRAL",
+      "intensity": 0,
+      "xCX": 113,
+      "yCX": 28
+    },
+    {
+      "poseIndex": 15,
+      "emotion": "ANGRY",
+      "intensity": 0.2,
+      "xCX": 113,
+      "yCX": 28
+    },
+    {
+      "poseIndex": 16,
+      "emotion": "ANGRY",
+      "intensity": 1,
+      "xCX": 108,
+      "yCX": 30
+    },
+    {
+      "poseIndex": 17,
+      "emotion": "BORED",
+      "intensity": 1,
+      "xCX": 167,
+      "yCX": 33
+    },
+    {
+      "poseIndex": 18,
+      "emotion": "WAVE",
+      "intensity": 1,
+      "xCX": 95,
+      "yCX": 58
+    }
+  ]
+}

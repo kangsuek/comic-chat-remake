@@ -101,16 +101,21 @@ comic-chat-remake/
 
 ### 자산 변환 파이프라인 (`.avb`/`.bgb` → PNG+JSON)
 
-`tools/avb-converter` (Node+`sharp`, RLE4/RLE8 BMP 디코더는 직접 구현 필요 — sharp는 RLE BMP 미지원):
+`tools/avb-converter` (Node+`sharp`, RLE BMP 디코더는 직접 구현 필요 — sharp는 RLE BMP 미지원):
 
 ```
-bmpDecoder.ts   # BITMAPFILEHEADER+INFOHEADER+팔레트+비트 → RGBA raw
+bmpDecoder.ts   # BITMAPFILEHEADER+INFOHEADER+팔레트+비트 → RGBA raw (RLE4만 구현, 근거는 아래)
 avbParser.ts    # magic(0x81)/avType/version 헤더 + AK_* 태그 스트림 파싱
 compositor.ts   # 전경+마스크+아우라 → 단일 RGBA PNG (sharp.composite)
 manifest.ts     # JSON 매니페스트 출력
 ```
 
-**1단계는 v1.0-pre의 단순(uncompressed) 포맷**(캐릭터 22종, 배경 3종)을 대상으로 한다 — v2.x(`avbfile.h`)의 태그/zlib압축/2bpp 팔레트 포맷은 스트레치 골로 미룬다.
+**1단계는 v1.0-pre의 단순 포맷**(캐릭터 22종, 배경 3종)을 대상으로 한다 — v2.x(`avbfile.h`)의 태그/zlib압축/2bpp 팔레트 포맷은 스트레치 골로 미룬다.
+
+**Phase 2 스파이크로 실측 확정한 내용** (22개 `.avb` 전수 + 배경 3종 전수 파싱·렌더링 검증, 상세는 [`docs/phases/02-static-avatar-rendering.md`](docs/phases/02-static-avatar-rendering.md) "0. 스파이크 결과" 참고):
+- 캐릭터 얼굴/몸통 아트는 **전부 1bpp `BI_RGB`(비압축)** — RLE 불필요. 배경 3종과 아바타 아이콘만 **4bpp `BI_RLE4`**. **`BI_RLE8`은 v1.0-pre 전체에서 사용처가 없어 구현하지 않는다.**
+- 아바타 아트는 색칠된 그림이 아니라 **흑백 잉크선 라인아트**다(`bodycam.cpp`의 `DrawBody`가 `MERGEPAINT`(마스크/아우라)+`SRCAND`(전경) GDI ROP로 합성 — 알파합성 치환: 검은 잉크=불투명 검정, (mask∪aura 영역의) 흰 배경=불투명 흰색, 그 외=투명). 마스크 적용 여부는 아바타별 `HEADMASK`/`TORSOMASK` 플래그에 달려 있어 컨버터가 이 플래그를 반드시 참조해야 한다.
+- 얼굴+몸통 상대 위치(`xOffset = torso.xCX + face.delta_xCX - face.xCX` 등, `GetBodyBox`)와 스케일/하단정렬 로직은 패널 크기에 의존하므로 **자산에 굽지 않고 렌더러(Konva)에 포팅**한다 — 매니페스트는 최종 합성 이미지와 함께 원시 위치값(`xCX/yCX/delta_xCX/delta_yCX/faceX/faceY`)도 그대로 보존한다.
 
 ### AI 캐릭터 통합
 
@@ -146,7 +151,7 @@ manifest.ts     # JSON 매니페스트 출력
 
 ## 가장 리스크가 큰 미지수 (선행 스파이크 필요)
 
-1. **BMP RLE4/RLE8 디코딩 + 마스크/아우라 합성 엣지케이스** — 본 구현 전 실제 `.avb` 파일 2~3개로 `bmpDecoder.ts`를 먼저 검증
+1. ~~**BMP RLE4/RLE8 디코딩 + 마스크/아우라 합성 엣지케이스**~~ — ✅ 2026-07-18 스파이크 완료. RLE4만 필요(RLE8 불필요), 합성 알고리즘(MERGEPAINT+SRCAND → 알파합성) 확정. 상세는 위 "자산 변환 파이프라인" 및 [`docs/phases/02-static-avatar-rendering.md`](docs/phases/02-static-avatar-rendering.md) 참고.
 2. **말풍선 꼬리/route-region 충돌 기하** — 스플라인 수식을 포팅하지 않기로 했으므로, 최소 랜덤 말풍선+꼬리 알고리즘을 프로토타입해 여러 화자 패널에서 눈으로 검증 후 본 엔진에 편입
 3. **패널 클론-확장 상태관리** — 패널은 교체되기 전까지 불변 스냅샷이지만 "현재" 패널은 계속 변형됨 — 이 데이터 모델(고정 배열+드래프트 레코드)을 3단계 전에 먼저 검증해 이벤트소싱 replay와 실시간 증분 업데이트가 동일한 결과를 내도록 함
 

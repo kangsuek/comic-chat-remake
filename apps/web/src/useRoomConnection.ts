@@ -13,7 +13,7 @@ export interface RoomConnection {
   status: ConnectionStatus;
   members: Member[];
   entries: HistoryEntry[];
-  join: (nick: string) => void;
+  join: (nick: string, characterId: string) => void;
   say: (text: string) => void;
 }
 
@@ -65,7 +65,10 @@ export function useRoomConnection(url: string): RoomConnection {
     }
   }, []);
 
-  const join = useCallback((nick: string) => sendAction({ type: "join", nick }), [sendAction]);
+  const join = useCallback(
+    (nick: string, characterId: string) => sendAction({ type: "join", nick, characterId }),
+    [sendAction],
+  );
   const say = useCallback((text: string) => sendAction({ type: "say", text }), [sendAction]);
 
   return { status, members, entries, join, say };

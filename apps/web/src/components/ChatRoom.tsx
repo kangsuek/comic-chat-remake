@@ -1,13 +1,16 @@
 import { useState } from "react";
+import type { AssetCatalogState } from "../useAssetCatalog";
 import { useLocalEmotionPreview } from "../useLocalEmotionPreview";
 import type { RoomConnection } from "../useRoomConnection";
+import { PanelCanvas } from "./PanelCanvas";
 
 interface ChatRoomProps {
   nick: string;
   connection: RoomConnection;
+  catalogState: AssetCatalogState;
 }
 
-export function ChatRoom({ nick, connection }: ChatRoomProps) {
+export function ChatRoom({ nick, connection, catalogState }: ChatRoomProps) {
   const [draft, setDraft] = useState("");
   // 서버 왕복 없이 타이핑 즉시 반응하는 로컬 감정 미리보기(원작 ChatPreSendText의 재현).
   const preview = useLocalEmotionPreview(draft);
@@ -23,19 +26,17 @@ export function ChatRoom({ nick, connection }: ChatRoomProps) {
         </ul>
       </aside>
       <main>
-        <ul>
-          {connection.entries.map((entry, i) => (
-            <li key={`${entry.actorId}-${entry.ts}-${i}`}>
-              <strong>{entry.nick}:</strong> {entry.text}
-              {entry.emotion && (
-                <span>
-                  {" "}
-                  [{entry.emotion.emotion}({entry.emotion.priority})]
-                </span>
-              )}
-            </li>
-          ))}
-        </ul>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: "8px" }}>
+          {connection.entries.map((entry, i) =>
+            catalogState.status === "ready" ? (
+              <PanelCanvas key={`${entry.actorId}-${entry.ts}-${i}`} entry={entry} catalog={catalogState.catalog} />
+            ) : (
+              <p key={`${entry.actorId}-${entry.ts}-${i}`}>
+                <strong>{entry.nick}:</strong> {entry.text}
+              </p>
+            ),
+          )}
+        </div>
         <form
           onSubmit={(e) => {
             e.preventDefault();

@@ -1,0 +1,203 @@
+{
+  "characterId": "connor",
+  "name": "connor",
+  "kind": "simple",
+  "flags": {
+    "headMask": false,
+    "torsoMask": false,
+    "torsoFirst": false
+  },
+  "icon": {
+    "poseIndex": 0,
+    "imagePath": "poses/0.png",
+    "width": 40,
+    "height": 40
+  },
+  "poses": [
+    {
+      "poseIndex": 0,
+      "imagePath": "poses/0.png",
+      "width": 40,
+      "height": 40
+    },
+    {
+      "poseIndex": 1,
+      "imagePath": "poses/1.png",
+      "width": 187,
+      "height": 416
+    },
+    {
+      "poseIndex": 2,
+      "imagePath": "poses/2.png",
+      "width": 166,
+      "height": 421
+    },
+    {
+      "poseIndex": 3,
+      "imagePath": "poses/3.png",
+      "width": 192,
+      "height": 423
+    },
+    {
+      "poseIndex": 4,
+      "imagePath": "poses/4.png",
+      "width": 184,
+      "height": 424
+    },
+    {
+      "poseIndex": 5,
+      "imagePath": "poses/5.png",
+      "width": 162,
+      "height": 419
+    },
+    {
+      "poseIndex": 6,
+      "imagePath": "poses/6.png",
+      "width": 161,
+      "height": 408
+    },
+    {
+      "poseIndex": 7,
+      "imagePath": "poses/7.png",
+      "width": 166,
+      "height": 419
+    },
+    {
+      "poseIndex": 8,
+      "imagePath": "poses/8.png",
+      "width": 183,
+      "height": 432
+    },
+    {
+      "poseIndex": 9,
+      "imagePath": "poses/9.png",
+      "width": 195,
+      "height": 431
+    },
+    {
+      "poseIndex": 10,
+      "imagePath": "poses/10.png",
+      "width": 182,
+      "height": 432
+    },
+    {
+      "poseIndex": 11,
+      "imagePath": "poses/11.png",
+      "width": 210,
+      "height": 413
+    },
+    {
+      "poseIndex": 12,
+      "imagePath": "poses/12.png",
+      "width": 168,
+      "height": 422
+    }
+  ],
+  "bodies": [
+    {
+      "poseIndex": 1,
+      "emotion": "SAD",
+      "intensity": 0.8,
+      "faceX": 133,
+      "faceY": 131
+    },
+    {
+      "poseIndex": 2,
+      "emotion": "NEUTRAL",
+      "intensity": 0,
+      "faceX": 133,
+      "faceY": 131
+    },
+    {
+      "poseIndex": 3,
+      "emotion": "LAUGH",
+      "intensity": 1,
+      "faceX": 133,
+      "faceY": 131
+    },
+    {
+      "poseIndex": 4,
+      "emotion": "BORED",
+      "intensity": 0.6,
+      "faceX": 133,
+      "faceY": 131
+    },
+    {
+      "poseIndex": 5,
+      "emotion": "BORED",
+      "intensity": 0.4,
+      "faceX": 133,
+      "faceY": 131
+    },
+    {
+      "poseIndex": 6,
+      "emotion": "HAPPY",
+      "intensity": 0.6,
+      "faceX": 133,
+      "faceY": 131
+    },
+    {
+      "poseIndex": 7,
+      "emotion": "ANGRY",
+      "intensity": 1,
+      "faceX": 133,
+      "faceY": 131
+    },
+    {
+      "poseIndex": 7,
+      "emotion": "SHOUT",
+      "intensity": 1,
+      "faceX": 133,
+      "faceY": 131
+    },
+    {
+      "poseIndex": 8,
+      "emotion": "HAPPY",
+      "intensity": 1,
+      "faceX": 133,
+      "faceY": 131
+    },
+    {
+      "poseIndex": 8,
+      "emotion": "LAUGH",
+      "intensity": 1,
+      "faceX": 133,
+      "faceY": 131
+    },
+    {
+      "poseIndex": 9,
+      "emotion": "SAD",
+      "intensity": 0.4980392156862745,
+      "faceX": 133,
+      "faceY": 131
+    },
+    {
+      "poseIndex": 10,
+      "emotion": "HAPPY",
+      "intensity": 0.2980392156862745,
+      "faceX": 133,
+      "faceY": 131
+    },
+    {
+      "poseIndex": 10,
+      "emotion": "NEUTRAL",
+      "intensity": 0,
+      "faceX": 133,
+      "faceY": 131
+    },
+    {
+      "poseIndex": 11,
+      "emotion": "COY",
+      "intensity": 1,
+      "faceX": 133,
+      "faceY": 131
+    },
+    {
+      "poseIndex": 12,
+      "emotion": "NEUTRAL",
+      "intensity": 0,
+      "faceX": 133,
+      "faceY": 131
+    }
+  ]
+}

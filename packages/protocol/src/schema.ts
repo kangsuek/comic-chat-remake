@@ -13,11 +13,20 @@ export const emotionCandidateSchema = z
   })
   .nullable();
 
+// comic-engine의 matchComplexPose/matchSimplePose 결과(Phase 2). 클라이언트는 이미 fetch해 둔
+// 아바타 매니페스트에서 이 인덱스로 실제 이미지/위치값을 찾는다.
+export const poseSelectionSchema = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("complex"), faceIndex: z.number().int().min(0), torsoIndex: z.number().int().min(0) }),
+  z.object({ kind: z.literal("simple"), bodyIndex: z.number().int().min(0) }),
+]);
+export type PoseSelection = z.infer<typeof poseSelectionSchema>;
+
 // ---- 클라이언트 → 서버 액션 ----
 
 const joinActionSchema = z.object({
   type: z.literal("join"),
   nick: z.string().min(1).max(32),
+  characterId: z.string().min(1),
 });
 
 const sayActionSchema = z.object({
@@ -37,6 +46,8 @@ const sayHistoryEntrySchema = z.object({
   nick: z.string(),
   text: z.string(),
   emotion: emotionCandidateSchema,
+  characterId: z.string(),
+  pose: poseSelectionSchema,
   ts: z.number(),
 });
 
@@ -46,6 +57,7 @@ export type HistoryEntry = z.infer<typeof historyEntrySchema>;
 const memberSchema = z.object({
   actorId: z.string(),
   nick: z.string(),
+  characterId: z.string(),
 });
 export type Member = z.infer<typeof memberSchema>;
 

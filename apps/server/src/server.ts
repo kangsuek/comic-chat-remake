@@ -27,7 +27,9 @@ export function createServer(port: number): WebSocketServer {
 
       if (action.type === "join") {
         if (actorId) return; // 이미 입장한 연결은 재입장 무시
-        actorId = room.join(action.nick, send).actorId;
+        const client = room.join(action.nick, action.characterId, send);
+        if (!client) return; // 존재하지 않는 characterId
+        actorId = client.actorId;
         return;
       }
 

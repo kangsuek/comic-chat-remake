@@ -1,0 +1,39 @@
+{
+  "characterId": "glenda",
+  "name": "glenda",
+  "kind": "simple",
+  "flags": {
+    "headMask": false,
+    "torsoMask": false,
+    "torsoFirst": false
+  },
+  "icon": {
+    "poseIndex": 0,
+    "imagePath": "poses/0.png",
+    "width": 40,
+    "height": 40
+  },
+  "poses": [
+    {
+      "poseIndex": 0,
+      "imagePath": "poses/0.png",
+      "width": 40,
+      "height": 40
+    },
+    {
+      "poseIndex": 1,
+      "imagePath": "poses/1.png",
+      "width": 224,
+      "height": 387
+    }
+  ],
+  "bodies": [
+    {
+      "poseIndex": 1,
+      "emotion": "NEUTRAL",
+      "intensity": 0,
+      "faceX": 152,
+      "faceY": 70
+    }
+  ]
+}

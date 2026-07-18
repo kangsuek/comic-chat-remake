@@ -10,7 +10,19 @@ export type WheelEmotion =
   | "SHOUT"
   | "LAUGH";
 
-export type GestureEmotion = "WAVE" | "POINTOTHER" | "POINTSELF";
+// WAVE/POINTOTHER/POINTSELF는 텍스트 규칙 엔진이 직접 트리거하는 제스처(Phase 1 범위).
+// DOUBLEPOINT/SHRUG/3QRWALK/SIDEWALK/3QFWALK는 .avb 포즈 데이터에 실제로 존재하지만
+// (Phase 2 avb-converter 스캔으로 확인) 원환 기반 포즈 매칭 대상은 아니다 — 다른 서브시스템
+// (리액션/걷기 애니메이션 등, 이후 단계)이 참조할 수 있도록 타입은 완전하게 유지한다.
+export type GestureEmotion =
+  | "WAVE"
+  | "POINTOTHER"
+  | "POINTSELF"
+  | "DOUBLEPOINT"
+  | "SHRUG"
+  | "3QRWALK"
+  | "SIDEWALK"
+  | "3QFWALK";
 
 export type EmotionId = WheelEmotion | GestureEmotion | "NEUTRAL";
 
@@ -40,5 +52,10 @@ export const ALL_EMOTION_IDS: EmotionId[] = [
   "WAVE",
   "POINTOTHER",
   "POINTSELF",
+  "DOUBLEPOINT",
+  "SHRUG",
+  "3QRWALK",
+  "SIDEWALK",
+  "3QFWALK",
   "NEUTRAL",
 ];

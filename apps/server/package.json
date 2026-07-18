@@ -11,6 +11,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
+    "@comic-chat/asset-manifest-types": "workspace:*",
     "@comic-chat/comic-engine": "workspace:*",
     "@comic-chat/protocol": "workspace:*",
     "ws": "^8.18.0"
