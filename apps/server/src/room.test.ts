@@ -191,6 +191,21 @@ describe("Room", () => {
     expect(alice.messages.at(-1)).toMatchObject({ type: "historyEntry", entry: { mode: "say" } });
   });
 
+  it("clientId를 전달하면 historyEntry에 그대로 실려 되돌아온다(낙관적 업데이트 재조정용)", () => {
+    const alice = collector();
+    const aliceClient = room.join("Alice", "mike-test", alice.send);
+    room.say(aliceClient!.actorId, "hi", "say", undefined, "client-generated-id-1");
+    expect(alice.messages.at(-1)).toMatchObject({ type: "historyEntry", entry: { clientId: "client-generated-id-1" } });
+  });
+
+  it("clientId를 생략하면 historyEntry에도 필드가 없다", () => {
+    const alice = collector();
+    const aliceClient = room.join("Alice", "mike-test", alice.send);
+    room.say(aliceClient!.actorId, "hi");
+    const entry = alice.messages.at(-1);
+    expect(entry?.type === "historyEntry" && "clientId" in entry.entry).toBe(false);
+  });
+
   it("think/shout/action 모드로 발화하면 그 모드로 기록되고 전원에게 브로드캐스트된다", () => {
     const alice = collector();
     const aliceClient = room.join("Alice", "mike-test", alice.send);

@@ -2,20 +2,20 @@ import { randomUUID } from "node:crypto";
 import path from "node:path";
 import type { AvatarManifest } from "@comic-chat/asset-manifest-types";
 import {
+  createInitialPoseState,
   defaultRuleDefinitions,
   foldEvents,
   loadRules,
-  matchComplexPose,
-  matchSimplePose,
+  matchPose,
   resolveEmotion,
-  type EmotionCandidate,
   type FoldResult,
   type Panel,
+  type PoseState,
   type RuleSet,
   type SayEvent,
   type SpeechMode,
 } from "@comic-chat/comic-engine";
-import type { HistoryEntry, Member, PoseSelection, ServerMessage } from "@comic-chat/protocol";
+import type { HistoryEntry, Member, ServerMessage } from "@comic-chat/protocol";
 import { loadAvatarCatalog } from "./avatarCatalog.js";
 import { EventStore } from "./eventStore.js";
 
@@ -31,15 +31,6 @@ export interface ConnectedClient {
   characterId: string;
   send: (message: ServerMessage) => void;
 }
-
-/** avatar.cpp의 m_lastFace/m_lastTorso/m_lastBody(NEUTRAL 폴백용 라운드로빈 시작점) 포팅. */
-interface PoseState {
-  lastFaceIndex: number;
-  lastTorsoIndex: number;
-  lastBodyIndex: number;
-}
-
-const INITIAL_POSE_STATE: PoseState = { lastFaceIndex: -1, lastTorsoIndex: -1, lastBodyIndex: -1 };
 
 /**
  * 단일 room("lobby")의 멤버/이벤트 로그를 관리한다.
@@ -95,7 +86,7 @@ export class Room {
 
     const client: ConnectedClient = { actorId: randomUUID(), nick: trimmedNick, characterId, send };
     this.clients.set(client.actorId, client);
-    this.poseStates.set(client.actorId, { ...INITIAL_POSE_STATE });
+    this.poseStates.set(client.actorId, createInitialPoseState());
     // 서버가 발급한 자기 actorId를 알려준다 — whisper 대상 선택 등에서 "나 자신"을 알아야 한다.
     send({ type: "joined", actorId: client.actorId });
     // 새로고침/재접속해도 이전 대화가 이어지도록, 지금까지의 로그를 이 클라이언트에게만 재생한다.
@@ -150,8 +141,10 @@ export class Room {
   /**
    * mode==="whisper"일 때는 targetActorId가 필수(프로토콜에서 이미 강제됨)이고, 발신자와
    * 대상에게만 브로드캐스트한다 — 그 외 모드는 기존처럼 방 전체에 브로드캐스트한다.
+   * clientId는 낙관적 업데이트(Phase 4 3단계)를 위해 발신 클라이언트가 붙인 임의 문자열을
+   * 그대로 되돌려주는 통과용 필드 — 서버는 의미를 해석하지 않고 entry에 실어 보낼 뿐이다.
    */
-  say(actorId: string, text: string, mode: SpeechMode = "say", targetActorId?: string): HistoryEntry | null {
+  say(actorId: string, text: string, mode: SpeechMode = "say", targetActorId?: string, clientId?: string): HistoryEntry | null {
     const client = this.clients.get(actorId);
     const avatar = client && this.avatarCatalog.get(client.characterId);
     const poseState = this.poseStates.get(actorId);
@@ -160,8 +153,17 @@ export class Room {
 
     // AI 캐릭터(Phase 5)도 이 진입점을 그대로 호출해야, 인간과 동일한 감정 인식·
     // 포즈 매칭·패널 배치 파이프라인을 통과한다(plan.md의 핵심 설계 결정).
+    //
+    // avatar.cpp의 GetBodyFromEmotion(CEmotionOpts&) 포팅 지점(matchPose, comic-engine).
+    // 매칭 직후 즉시 라운드로빈 상태를 갱신한다 — 원작은 이 갱신을 패널 배치 확정 시점
+    // (RecordBody, panel.cpp의 FetchSpeaker/ReplaceBody)에 하지만, Phase 3 완료 후
+    // panel.cpp의 AddLine을 재대조해 두 시점이 항상 동치임을 확인했다: AddLine은 새/클론
+    // 패널을 만들 때 `oldP->AvatarInPanel(id)`가 참이면 반드시 새 패널을 시작하므로, 현재
+    // 화자 id는 FetchSpeaker(newP) 시점에 newP->m_bodies에 결코 이미 존재할 수 없다 —
+    // 즉 FetchSpeaker의 "이미 있음" 조기 반환(=RecordBody 미호출) 분기는 절대 일어나지
+    // 않는다(2026-07-19 재검증, 이전엔 "Phase 3 이후 재검토 필요"로 남겨뒀던 항목).
     const resolution = resolveEmotion(text, this.rules);
-    const pose = this.matchPose(avatar, resolution.candidates, poseState);
+    const pose = matchPose(avatar, resolution.candidates, poseState);
 
     const entry: HistoryEntry = {
       type: "say",
@@ -173,6 +175,7 @@ export class Room {
       characterId: client.characterId,
       pose,
       ...(targetActorId ? { targetActorId } : {}),
+      ...(clientId ? { clientId } : {}),
       ts: Date.now(),
     };
     this.lastSeq = this.eventStore.append(this.roomId, entry);
@@ -201,40 +204,6 @@ export class Room {
    */
   getPanels(): readonly Panel[] {
     return this.fold.panels;
-  }
-
-  /**
-   * avatar.cpp의 GetBodyFromEmotion(CEmotionOpts&) 포팅 지점. 매칭 직후 즉시 라운드로빈
-   * 상태를 갱신한다 — 원작은 이 갱신을 패널 배치 확정 시점(RecordBody, panel.cpp의
-   * FetchSpeaker/ReplaceBody)에 하지만, Phase 3 완료 후 panel.cpp의 AddLine을 재대조해
-   * 두 시점이 항상 동치임을 확인했다: AddLine은 새 패널/클론 패널을 만들 때
-   * `oldP->AvatarInPanel(id)`가 참이면 반드시 새 패널을 시작하므로, 현재 화자 id는
-   * FetchSpeaker(newP) 시점에 newP->m_bodies에 결코 이미 존재할 수 없다 — 즉 FetchSpeaker의
-   * "이미 있음" 조기 반환(=RecordBody 미호출) 분기는 현재 줄의 화자에 대해서는 절대
-   * 일어나지 않는다. 뒤이은 ReplaceBody(id) 호출도 같은 av->m_body를 다시 클론해
-   * RecordBody를 한 번 더(동일 인덱스로, 멱등) 호출할 뿐이다. 레이아웃 실패로
-   * StartNewPanel()+AddLine() 재귀 재시도가 일어나도 av->m_body가 그사이 바뀌지 않으므로
-   * 결과는 동일하다. 따라서 "메시지 하나 = 매칭 즉시 확정"으로 매번 갱신하는 이 구현은
-   * 원작과 항상 같은 순서를 관찰한다(2026-07-19 재검증, 이전엔 "Phase 3 이후 재검토
-   * 필요"로 남겨뒀던 항목).
-   */
-  private matchPose(avatar: AvatarManifest, candidates: readonly EmotionCandidate[], poseState: PoseState): PoseSelection {
-    if (avatar.kind === "complex") {
-      const { faceIndex, torsoIndex } = matchComplexPose(
-        candidates,
-        avatar.faces,
-        avatar.torsos,
-        poseState.lastFaceIndex,
-        poseState.lastTorsoIndex,
-      );
-      poseState.lastFaceIndex = faceIndex;
-      poseState.lastTorsoIndex = torsoIndex;
-      return { kind: "complex", faceIndex, torsoIndex };
-    }
-
-    const { bodyIndex } = matchSimplePose(candidates, avatar.bodies, poseState.lastBodyIndex);
-    poseState.lastBodyIndex = bodyIndex;
-    return { kind: "simple", bodyIndex };
   }
 
   private broadcastMemberList(): void {

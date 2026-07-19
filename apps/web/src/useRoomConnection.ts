@@ -26,7 +26,8 @@ export interface RoomConnection {
   /** 가장 최근 changeNick 시도가 거부된 이유. */
   changeNickError: ChangeNickRejectReason | null;
   join: (nick: string, characterId: string) => void;
-  say: (text: string, mode?: SpeechMode, targetActorId?: string) => void;
+  /** clientId를 실으면 서버가 그대로 historyEntry에 돌려준다(낙관적 업데이트 재조정용, useOptimisticSay 참고). */
+  say: (text: string, mode?: SpeechMode, targetActorId?: string, clientId?: string) => void;
   changeNick: (newNick: string) => void;
 }
 
@@ -101,8 +102,8 @@ export function useRoomConnection(url: string): RoomConnection {
     [sendAction],
   );
   const say = useCallback(
-    (text: string, mode: SpeechMode = "say", targetActorId?: string) =>
-      sendAction({ type: "say", text, mode, targetActorId }),
+    (text: string, mode: SpeechMode = "say", targetActorId?: string, clientId?: string) =>
+      sendAction({ type: "say", text, mode, targetActorId, clientId }),
     [sendAction],
   );
   const changeNick = useCallback(

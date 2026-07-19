@@ -155,3 +155,38 @@ export function matchSimplePose<B extends PoseLike>(
   if (foundBody < 0) foundBody = pickNeutralIndex(bodies, lastBodyIndex);
   return { bodyIndex: foundBody };
 }
+
+/** avatar.cpp의 m_lastFace/m_lastTorso/m_lastBody(NEUTRAL 폴백 라운드로빈 시작점) 상태. */
+export interface PoseState {
+  lastFaceIndex: number;
+  lastTorsoIndex: number;
+  lastBodyIndex: number;
+}
+
+export function createInitialPoseState(): PoseState {
+  return { lastFaceIndex: -1, lastTorsoIndex: -1, lastBodyIndex: -1 };
+}
+
+export type MatchedPoseSelection = { kind: "complex"; faceIndex: number; torsoIndex: number } | { kind: "simple"; bodyIndex: number };
+
+/**
+ * matchComplexPose/matchSimplePose를 아바타 kind에 따라 분기 호출하고, 결과로 poseState를
+ * 그 자리에서 갱신한다(다음 매칭이 이어서 라운드로빈되도록). 서버(Room.say)와 클라이언트
+ * (낙관적 미리보기, Phase 4 3단계)가 정확히 같은 라운드로빈 진행을 관찰하려면 이 조합 로직
+ * 자체가 양쪽에서 이원화되면 안 되므로 comic-engine으로 승격했다(plan.md의 핵심 설계 원칙).
+ */
+export function matchPose<F extends PoseLike, T extends PoseLike, B extends PoseLike>(
+  avatar: { kind: "complex"; faces: readonly F[]; torsos: readonly T[] } | { kind: "simple"; bodies: readonly B[] },
+  candidates: readonly EmotionCandidate[],
+  poseState: PoseState,
+): MatchedPoseSelection {
+  if (avatar.kind === "complex") {
+    const { faceIndex, torsoIndex } = matchComplexPose(candidates, avatar.faces, avatar.torsos, poseState.lastFaceIndex, poseState.lastTorsoIndex);
+    poseState.lastFaceIndex = faceIndex;
+    poseState.lastTorsoIndex = torsoIndex;
+    return { kind: "complex", faceIndex, torsoIndex };
+  }
+  const { bodyIndex } = matchSimplePose(candidates, avatar.bodies, poseState.lastBodyIndex);
+  poseState.lastBodyIndex = bodyIndex;
+  return { kind: "simple", bodyIndex };
+}

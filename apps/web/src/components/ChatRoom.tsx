@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import { avatarAssetUrl } from "../assets";
 import type { AssetCatalogState } from "../useAssetCatalog";
 import { useLocalEmotionPreview } from "../useLocalEmotionPreview";
+import { useOptimisticSay } from "../useOptimisticSay";
 import type { ChangeNickRejectReason, RoomConnection } from "../useRoomConnection";
 import { PanelCanvas } from "./PanelCanvas";
 
@@ -46,14 +47,22 @@ export function ChatRoom({ nick, connection, catalogState }: ChatRoomProps) {
     return avatar?.icon ? avatarAssetUrl(characterId, avatar.icon.imagePath) : null;
   };
 
+  // 메시지 전송 즉시 로컬에서 감정/포즈를 계산해 "잠정" historyEntry를 끝에 이어붙인다(낙관적
+  // 미리보기, Phase 4 3단계). 서버가 확정 결과를 브로드캐스트하면 자동으로 잠정 항목이 빠지고
+  // connection.entries의 진짜 항목으로 교체된다(useOptimisticSay 내부 reconcile).
+  const { entries: optimisticEntries, say: optimisticSay } = useOptimisticSay(
+    connection,
+    catalogState.status === "ready" ? catalogState.catalog : null,
+  );
+
   // 클라이언트도 서버(Room)와 동일한 foldEvents()를 그대로 돌려 패널 구조를 재구성한다
   // (plan.md: 서버/클라가 같은 워크스페이스 링크로 동일 로직을 공유 — 이원화 방지).
-  const fold = useMemo(() => foldEvents(connection.entries.map(toSayEvent)), [connection.entries]);
+  const fold = useMemo(() => foldEvents(optimisticEntries.map(toSayEvent)), [optimisticEntries]);
   const actorNicks = useMemo(() => {
     const map = new Map<string, string>();
-    for (const entry of connection.entries) map.set(entry.actorId, entry.nick);
+    for (const entry of optimisticEntries) map.set(entry.actorId, entry.nick);
     return map;
-  }, [connection.entries]);
+  }, [optimisticEntries]);
 
   const whisperCandidates = connection.members.filter((m) => m.actorId !== connection.selfActorId);
   const canSubmit = draft.trim().length > 0 && (mode !== "whisper" || whisperTarget !== "");
@@ -105,7 +114,7 @@ export function ChatRoom({ nick, connection, catalogState }: ChatRoomProps) {
             e.preventDefault();
             const trimmed = draft.trim();
             if (!trimmed || !canSubmit) return;
-            connection.say(trimmed, mode, mode === "whisper" ? whisperTarget : undefined);
+            optimisticSay(trimmed, mode, mode === "whisper" ? whisperTarget : undefined);
             setDraft("");
           }}
         >

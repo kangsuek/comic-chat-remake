@@ -41,6 +41,12 @@ describe("clientActionSchema", () => {
     expect(result.success).toBe(false);
   });
 
+  it("say 액션에 clientId를 실을 수 있다(낙관적 업데이트용)", () => {
+    const result = clientActionSchema.safeParse({ type: "say", text: "hi", clientId: "c1" });
+    expect(result.success).toBe(true);
+    if (result.success && result.data.type === "say") expect(result.data.clientId).toBe("c1");
+  });
+
   it("changeNick 액션을 허용한다", () => {
     expect(clientActionSchema.safeParse({ type: "changeNick", newNick: "Bob" }).success).toBe(true);
   });
@@ -159,6 +165,25 @@ describe("serverMessageSchema", () => {
           ts: 1234567890,
         },
       ],
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it("historyEntry에 clientId를 포함할 수 있다", () => {
+    const result = serverMessageSchema.safeParse({
+      type: "historyEntry",
+      entry: {
+        type: "say",
+        mode: "say",
+        actorId: "actor-1",
+        nick: "Alice",
+        text: "hi",
+        emotion: null,
+        characterId: "mike",
+        pose: { kind: "simple", bodyIndex: 0 },
+        clientId: "c1",
+        ts: 1,
+      },
     });
     expect(result.success).toBe(true);
   });

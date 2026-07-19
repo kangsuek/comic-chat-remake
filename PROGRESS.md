@@ -11,7 +11,7 @@
 | [Phase 1 — 텍스트 채팅 MVP](docs/phases/01-text-chat-mvp.md) | ✅ 완료 | 2026-07-18 | 2026-07-18 | 감정 라벨 붙는 WS 텍스트 챗봇 + 타이핑 중 로컬 감정 미리보기, E2E 검증 완료 |
 | [Phase 2 — 정적 아바타 렌더링](docs/phases/02-static-avatar-rendering.md) | ✅ 완료 | 2026-07-18 | 2026-07-18 | 22종 변환, Konva 렌더링, 캐릭터 선택 UI까지 E2E 검증 완료 |
 | [Phase 3 — 완전 자동 레이아웃](docs/phases/03-full-auto-layout.md) | ✅ 완료 | 2026-07-18 | 2026-07-19 | 4단계 전부 완료. talkTo 기반 캐릭터 회전만 프로토콜 미비로 Phase 4로 명시적 이연 |
-| [Phase 4 — 전체 프로토콜 + 멀티룸](docs/phases/04-full-protocol-multiroom.md) | 🟨 진행 중 | 2026-07-19 | | 1단계(발화모드)·2단계(닉네임 관리) 완료, 3단계(낙관적 업데이트) 착수 전 |
+| [Phase 4 — 전체 프로토콜 + 멀티룸](docs/phases/04-full-protocol-multiroom.md) | 🟨 진행 중 | 2026-07-19 | | 1~3단계(발화모드·닉네임 관리·낙관적 업데이트) 완료, 4단계(멀티룸) 착수 전 |
 | [Phase 5 — AI 캐릭터](docs/phases/05-ai-character.md) | ⬜ 시작 전 | | | |
 | [Phase 6 — Tauri 빌드 + 마무리](docs/phases/06-tauri-packaging.md) | ⬜ 시작 전 | | | |
 
@@ -19,6 +19,7 @@
 
 <!-- 새 항목은 이 줄 바로 아래에 추가 (최신이 위로) -->
 
+- **2026-07-19** — Phase 4 3단계(서버 canonical + 클라이언트 낙관적 업데이트) 완료. 이 단계는 원작 포팅이 아니라 plan.md가 이미 정한 이 리메이크만의 아키텍처 결정(원작은 IRC PRIVMSG가 발신자에게 echo되지 않아 "재조정" 개념 자체가 없었음, 서버를 canonical로 둔 건 우리 쪽 설계). 핵심 리팩터: `Room.say()`가 갖고 있던 아바타 kind별 포즈매칭+라운드로빈 갱신 로직을 `packages/comic-engine/src/avatar/matcher.ts`의 `matchPose()`/`PoseState`로 승격해 서버·클라이언트가 완전히 같은 코드를 공유하도록 함(plan.md "로직 이원화 방지" 원칙 적용). 프로토콜에 낙관적 업데이트 재조정용 `clientId`(say 액션/historyEntry 양쪽에 optional) 추가 — 서버는 의미 해석 없이 그대로 통과시킴. `apps/web/src/useOptimisticSay.ts`: 전송 즉시 로컬에서 `resolveEmotion`+`matchPose`로 잠정 historyEntry를 계산해 렌더링하고, 서버가 같은 clientId로 확정 entry를 보내면 제거 + canonical pose로 로컬 라운드로빈 상태 재동기화. 핵심 로직(`buildProvisionalEntry`/`reconcilePending`)은 React 비의존 순수 함수로 분리해 단위 테스트(8개)로 직접 검증 — 기존 `panelBalloonLayout.ts` 패턴을 그대로 따름. 브라우저 E2E(2세션)로 즉시 렌더링, 재조정 시 흔적 없음(전송 직후와 1초 후 스크린샷 동일), 확인 응답 안 기다리고 연달아 보낸 3개 메시지도 순서/포즈 정확, 귓속말 재조정까지 확인. 워크스페이스 전체 typecheck/lint/test(213개) 클린.
 - **2026-07-19** — Phase 4 2단계(회원/닉네임 관리) 완료. `irc.cpp` 조사로 원작 동작 확정: 닉네임 중복은 IRC `433` 거부+재입력 방식(자동 접미사 아님), 닉네임 변경(`NICK`/`ProcessNick`)은 멤버 목록만 갱신하고 만화 패널에는 전혀 반영되지 않음(원작에 "이름 바꿈" 시스템 메시지 자체가 없음) — 그래서 `changeNick`도 EventStore에 기록하지 않고 memberList 재브로드캐스트로만 구현. 프로토콜에 `changeNick` 액션 + `joinRejected`/`changeNickRejected` 메시지 추가. `Room.join()`에 대소문자 무관 닉네임 중복 검사 추가(기존에 characterId 오류 시 조용히 무시하던 기존 결함도 함께 고침 — 이제 항상 거부 사유를 통지). `App.tsx`가 join 확정 전까지 재시도 화면에 머물도록 수정, `ChatRoom`에 닉네임 변경 UI + 참여자 아바타 아이콘 추가. 단위 테스트 8개 추가(전체 211개), 브라우저 2세션 E2E로 중복 거부/정상 변경/실시간 반영/패널 무흔적 전부 확인. 워크스페이스 전체 typecheck/lint/test 클린.
 - **2026-07-19** — 사용자 요청으로 Phase 1~4 전체를 처음부터 순서대로 원본 소스와 재대조(그리디 배치/줌 외 나머지 전 영역). 결과:
   - **Phase 1(규칙엔진)**: `chat.rc` STRINGTABLE 9개 규칙 전부 정확 일치, `checkWord`/`findString`/`checkStart`/`checkAllCaps`/`getSentenceStarts`/우선순위 override 전부 정확한 포팅 확인. **원작 자체의 실제 버그 발견**: `GetEmotionsFromString`의 문장시작(CheckStart) 규칙 비교가 `bptr`/`lptr`(다음 문장 위치)를 계산만 하고 실제 비교엔 안 써서, 두 번째 이후 문장의 "Hi"/"You"/"I" 등이 원작에선 절대 매칭되지 않는 죽은 로직이다. 우리 포팅은 이 버그를 재현하지 않고 각 문장 시작마다 정상적으로 검사한다 — 사용자에게 확인한 결과 **현재 상태(버그 미재현) 유지로 확정**, 코드 변경 없음(`docs/phases/01-text-chat-mvp.md`의 "재검증 결과" 절 참고).

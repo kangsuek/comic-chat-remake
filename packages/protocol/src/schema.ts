@@ -43,6 +43,12 @@ const sayActionSchema = z.object({
   mode: speechModeSchema.default("say"),
   /** whisper일 때만 필요 — 그 외 모드에서는 무시된다. */
   targetActorId: z.string().min(1).optional(),
+  /**
+   * 낙관적 업데이트(Phase 4 3단계)용 클라이언트 임의 식별자 — 서버는 의미를 해석하지 않고
+   * 그대로 historyEntry에 실어 되돌려준다. 클라이언트는 이 값으로 "방금 내가 로컬로 미리
+   * 그려둔 잠정 패널"과 "서버가 확정해 돌려준 진짜 결과"를 짝지어 교체(reconcile)한다.
+   */
+  clientId: z.string().min(1).optional(),
 });
 
 // irc.cpp의 "NICK <newnick>" 클라이언트 명령 포팅. 원작은 서버가 닉 변경을 승인하면 NICK 응답을
@@ -75,6 +81,8 @@ const sayHistoryEntrySchema = z.object({
   pose: poseSelectionSchema,
   /** whisper일 때만 채워진다(발화모드 UI 표시 및 "OO님이 XX에게 귓속말" 문구용). */
   targetActorId: z.string().optional(),
+  /** 발신자가 sayActionSchema에 실어 보낸 clientId를 그대로 통과시킨 값(낙관적 업데이트 재조정용). */
+  clientId: z.string().optional(),
   ts: z.number(),
 });
 

@@ -35,10 +35,17 @@
 - [x] 단위 테스트 8개 추가(`schema.test.ts` 2개, `room.test.ts` 6개 — 중복 거부, changeNick 성공/중복/빈값/자기자신/존재하지않는actorId, "leave 없이 재접속하면 거부됨"). 워크스페이스 전체 typecheck/lint/test(211개) 클린.
 - [x] 브라우저 E2E(2개 독립 세션): Alice 입장 후 Bob이 같은 닉("alice", 대소문자 다름)으로 입장 시도 → 거부 메시지 확인. Bob으로 정상 입장 후 changeNick으로 "Alice"(중복, 거부) → "Bobby"(성공) 시도 → 양쪽 세션의 참여자 목록이 즉시 갱신되고, 새 만화 패널이 생기지 않음을 확인(원작 `ProcessNick` 동작과 일치). 이후 Bobby가 보낸 새 메시지는 바뀐 닉으로 정상 기록됨. 콘솔 에러 없음.
 
-### 3단계 — 서버 canonical + 클라이언트 낙관적 업데이트
-- [ ] 클라이언트: 메시지 전송 즉시 로컬에서 `resolveEmotion`+`matchPose`+`foldEvents`를 동일 `comic-engine`으로 실행 → "provisional" 패널 렌더링(임시 ID)
-- [ ] 서버 브로드캐스트 도착 시 provisional 항목을 canonical 결과로 교체(reconcile)
-- [ ] 재조정 시 시각적 튐(flicker) 최소화 검증(좌표/포즈가 사실상 대부분 같으므로 자연스러워야 함)
+### 3단계 — 서버 canonical + 클라이언트 낙관적 업데이트 — 완료 (2026-07-19)
+
+**원작과의 관계**: 이 단계는 포팅이 아니라 이 리메이크만의 신규 아키텍처 결정이다(plan.md에 이미 명시). 원작은 IRC 서버가 보통 PRIVMSG를 발신자 자신에게 echo하지 않으므로, 각 클라이언트가 자기 발화를 로컬 계산 결과로 그리는 게 곧 최종 결과였다 — "재조정"이라는 개념 자체가 없다. 우리는 서버를 canonical 소스로 두기로 했으므로(원작과 다른 설계) 로컬 미리보기와 서버 확정 결과가 다를 수 있어 reconcile이 필요하다.
+
+**핵심 리팩터: `matchPose`/`PoseState`를 comic-engine으로 승격.** 서버(`Room.say`)가 이미 갖고 있던 "아바타 kind에 따라 matchComplexPose/matchSimplePose를 호출하고 라운드로빈 상태를 갱신" 로직은 원래 `room.ts`에 private 메서드로만 있었다. 클라이언트도 정확히 같은 로직이 필요해서(그래야 낙관적 예측이 서버와 어긋나지 않음), `packages/comic-engine/src/avatar/matcher.ts`에 `matchPose()`/`createInitialPoseState()`/`PoseState` 타입으로 옮겨 서버·클라이언트가 같은 코드를 import하게 했다(plan.md의 "로직 이원화 방지" 원칙을 이 지점에도 적용). `room.ts`는 이제 이 공용 함수를 호출만 한다.
+
+- [x] 프로토콜에 `clientId`(낙관적 업데이트용 발신자 임의 식별자) 추가 — `sayActionSchema`/`sayHistoryEntrySchema` 양쪽에 optional 필드로, 서버는 의미를 해석하지 않고 그대로 통과시킨다(`Room.say`가 `entry`에 실어 되돌려줌, `EventStore`에도 다른 필드와 함께 자연히 영속화됨 — 특별 취급 불필요).
+- [x] `apps/web/src/useOptimisticSay.ts`: 메시지 전송 즉시 `resolveEmotion`+`matchPose`(comic-engine, 서버와 동일 함수)로 "잠정" historyEntry를 계산해 `clientId`와 함께 로컬 상태(pending Map)에 추가 → `ChatRoom`은 `connection.entries`가 아니라 이 훅이 돌려주는 `entries`(confirmed + pending)를 `foldEvents`에 넘겨 패널을 그린다. 서버가 같은 `clientId`의 `historyEntry`를 브로드캐스트하면 pending에서 제거되고(reconcile), 내가 보낸 것이면 canonical `pose`로 로컬 `PoseState`를 재동기화해 드리프트를 막는다. 연결이 끊긴 상태거나 카탈로그가 아직 없으면 낙관적 렌더링 없이 평범히 전송(유령 말풍선 방지).
+- [x] `buildProvisionalEntry`/`reconcilePending`을 React 비의존 순수 함수로 분리해 `useOptimisticSay.test.ts`에서 직접 검증(8개 테스트) — 이 프로젝트의 기존 관례(`panelBalloonLayout.ts`처럼 순수 로직을 뽑아 React/DOM 테스트 인프라 없이 검증)를 그대로 따름. `matcher.test.ts`에 `matchPose` 테스트 2개 추가.
+- [x] 재조정 시 시각적 튐(flicker) 최소화: 로컬 계산이 서버와 **완전히 동일한 comic-engine 코드 + 동일한 PoseState**로 이뤄지므로(같은 입력 → 같은 출력), 단일 메시지가 인플라이트인 정상 케이스에서는 잠정 결과와 확정 결과가 텍스트/감정/포즈까지 bit-exact 일치한다 — "교체"가 아니라 사실상 무해한 덮어쓰기. 브라우저 E2E로 확인: 전송 직후 스크린샷과 1초 후 스크린샷이 완전히 동일(패널 위치/포즈/텍스트 변화 없음). 연속 3개 빠른 전송(확인 응답을 기다리지 않고 연달아 전송)도 각각 다른 패널에 정확한 순서/포즈로 기록됨을 확인 — 로컬 PoseState가 낙관적 계산 직후 즉시 갱신되므로 라운드로빈이 꼬이지 않음. 귓속말도 동일하게 검증(발신자 자신도 `sendTo` 대상이라 reconcile이 정상 작동, 대상자 화면에도 동일하게 반영).
+- [x] 워크스페이스 전체 typecheck/lint/test(213개) 클린. 브라우저 E2E(2개 독립 세션)로 낙관적 렌더링·재조정·연속 전송·귓속말 전부 확인, 콘솔 에러 없음.
 
 ### 4단계 — 멀티룸
 - [ ] `rooms` 맵으로 room 분리, room별 이벤트 로그·멤버 목록 독립. Phase 3에서 미리 준비해둔 `room_snapshot` 캐시가 room 지연 생성/정리와 실제로 맞물리는지 확인
