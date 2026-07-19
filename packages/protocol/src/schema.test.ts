@@ -20,6 +20,10 @@ describe("clientActionSchema", () => {
     expect(clientActionSchema.safeParse({ type: "listRooms" }).success).toBe(true);
   });
 
+  it("react 액션을 허용한다(부가 필드 없이)", () => {
+    expect(clientActionSchema.safeParse({ type: "react" }).success).toBe(true);
+  });
+
   it("say 액션을 허용한다(mode 생략 시 say로 취급)", () => {
     const result = clientActionSchema.safeParse({ type: "say", text: "Hello!" });
     expect(result.success).toBe(true);
@@ -158,6 +162,21 @@ describe("serverMessageSchema", () => {
       },
     });
     expect(result.success).toBe(false);
+  });
+
+  it("reaction historyEntry를 허용한다(말풍선 관련 필드 없이)", () => {
+    const result = serverMessageSchema.safeParse({
+      type: "historyEntry",
+      entry: {
+        type: "reaction",
+        actorId: "actor-1",
+        nick: "Alice",
+        characterId: "mike",
+        pose: { kind: "complex", faceIndex: 0, torsoIndex: 0 },
+        ts: 1234567890,
+      },
+    });
+    expect(result.success).toBe(true);
   });
 
   it("history 메시지(빈 배열 포함)를 허용한다", () => {

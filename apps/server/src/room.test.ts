@@ -9,6 +9,12 @@ function collector() {
   return { messages, send: (m: ServerMessage) => messages.push(m) };
 }
 
+/** 이 파일에서 history 재생을 검증하는 곳은 전부 say 이벤트라 텍스트를 안전하게 꺼낼 수 있다. */
+function textOf(e: HistoryEntry): string {
+  if (e.type !== "say") throw new Error("expected a say entry");
+  return e.text;
+}
+
 const NO_FLAGS = { headMask: false, torsoMask: false, torsoFirst: false };
 
 const testCatalog = new Map<string, AvatarManifest>([
@@ -138,6 +144,17 @@ describe("Room", () => {
     room.changeNick(aliceClient!.actorId, "Alice ");
 
     expect(alice.messages).toHaveLength(0);
+  });
+
+  it("changeNick에 대소문자만 다른 자기 닉네임을 주면(원작 stricmp) 조용히 무시하고 표기도 안 바뀐다", () => {
+    const alice = collector();
+    const aliceClient = room.join("Alice", "mike-test", alice.send);
+    alice.messages.length = 0;
+
+    room.changeNick(aliceClient!.actorId, "ALICE");
+
+    expect(alice.messages).toHaveLength(0); // memberList 재브로드캐스트조차 없음
+    expect(room.getMembers()).toEqual([{ actorId: aliceClient!.actorId, nick: "Alice", characterId: "mike-test" }]);
   });
 
   it("존재하지 않는 actorId로 changeNick하면 아무 일도 일어나지 않는다", () => {
@@ -270,6 +287,51 @@ describe("Room", () => {
     expect(result).toBeNull();
   });
 
+  describe("react", () => {
+    it("말풍선 없는 reaction historyEntry를 전원에게 브로드캐스트한다", () => {
+      const alice = collector();
+      const aliceClient = room.join("Alice", "mike-test", alice.send);
+      const bob = collector();
+      room.join("Bob", "tux-test", bob.send);
+      alice.messages.length = 0;
+      bob.messages.length = 0;
+
+      const result = room.react(aliceClient!.actorId);
+
+      expect(result).toMatchObject({ type: "reaction", actorId: aliceClient!.actorId, nick: "Alice", characterId: "mike-test" });
+      expect(result && "text" in result).toBe(false);
+      expect(alice.messages).toHaveLength(1);
+      expect(alice.messages[0]).toEqual({ type: "historyEntry", entry: result });
+      expect(bob.messages).toEqual(alice.messages);
+    });
+
+    it("complex 아바타는 NEUTRAL 라운드로빈으로 포즈를 고른다", () => {
+      const aliceClient = room.join("Alice", "mike-test", () => {})!;
+      const first = room.react(aliceClient.actorId);
+      const second = room.react(aliceClient.actorId);
+      // mike-test는 NEUTRAL 얼굴이 poseIndex 0 하나뿐이라 매번 그 자리로 돌아오지만,
+      // 라운드로빈 자체가 매 호출 진행된다는 것은 matcher.test.ts에서 이미 검증했다 —
+      // 여기서는 매번 유효한 complex 포즈가 나온다는 것만 확인한다.
+      expect(first).toMatchObject({ pose: { kind: "complex" } });
+      expect(second).toMatchObject({ pose: { kind: "complex" } });
+    });
+
+    it("존재하지 않는 actorId로 react하면 무시된다(null 반환)", () => {
+      expect(room.react("no-such-actor")).toBeNull();
+    });
+
+    it("history에 기록되어 재접속 시에도 재생된다", () => {
+      const aliceClient = room.join("Alice", "mike-test", () => {})!;
+      room.say(aliceClient.actorId, "hi");
+      room.react(aliceClient.actorId);
+
+      const bob = collector();
+      room.join("Bob", "tux-test", bob.send);
+      const historyMsg = bob.messages.find((m) => m.type === "history");
+      expect(historyMsg?.type === "history" && historyMsg.entries.map((e) => e.type)).toEqual(["say", "reaction"]);
+    });
+  });
+
   it("leave 시 memberList가 갱신된다", () => {
     const alice = collector();
     const aliceClient = room.join("Alice", "mike-test", alice.send);
@@ -297,7 +359,7 @@ describe("Room", () => {
     const carol = collector();
     room.join("Carol", "mike-test", carol.send);
     const carolHistory = carol.messages.find((m) => m.type === "history");
-    expect(carolHistory?.type === "history" && carolHistory.entries.map((e) => e.text)).toEqual(["public hello"]);
+    expect(carolHistory?.type === "history" && carolHistory.entries.map(textOf)).toEqual(["public hello"]);
 
     // 알려진 한계: actorId는 접속(join)마다 새로 발급되는 randomUUID라 영속적 사용자 식별자가
     // 아니다(Phase 2/3에서 이미 확인된 설계) — Bob이 재접속하면 새 actorId를 받으므로 예전
@@ -310,7 +372,7 @@ describe("Room", () => {
     const bobAgain = collector();
     room.join("Bob", "tux-test", bobAgain.send);
     const bobHistoryAfterReconnect = bobAgain.messages.find((m) => m.type === "history");
-    expect(bobHistoryAfterReconnect?.type === "history" && bobHistoryAfterReconnect.entries.map((e) => e.text)).toEqual([
+    expect(bobHistoryAfterReconnect?.type === "history" && bobHistoryAfterReconnect.entries.map(textOf)).toEqual([
       "public hello",
     ]);
   });
@@ -326,7 +388,7 @@ describe("Room", () => {
 
     const historyMsg = bob.messages.find((m) => m.type === "history");
     expect(historyMsg?.type).toBe("history");
-    expect(historyMsg?.type === "history" && historyMsg.entries.map((e) => e.text)).toEqual(["first", "second"]);
+    expect(historyMsg?.type === "history" && historyMsg.entries.map(textOf)).toEqual(["first", "second"]);
   });
 
   it("서버 재시작(같은 EventStore로 Room을 다시 생성)해도 대화 로그가 그대로 복구된다", () => {

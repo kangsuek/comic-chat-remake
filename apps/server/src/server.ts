@@ -76,6 +76,12 @@ export function createServer(port: number): WebSocketServer {
       if (action.type === "changeNick") {
         if (!actorId || !roomId) return; // join 전에는 닉네임 변경 불가
         registry.get(roomId)?.changeNick(actorId, action.newNick);
+        return;
+      }
+
+      if (action.type === "react") {
+        if (!actorId || !roomId) return; // join 전에는 리액션 불가
+        registry.get(roomId)?.react(actorId);
       }
     });
 

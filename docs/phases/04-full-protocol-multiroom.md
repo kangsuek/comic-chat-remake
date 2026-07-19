@@ -60,11 +60,25 @@
 - [x] 단위 테스트 추가(`schema.test.ts` 4개, `roomRegistry.test.ts` 8개 — getOrCreate 재사용/분리, list, leaveAndCleanup의 메모리 정리·유지·재입장 복구, 존재하지 않는 room 처리). 워크스페이스 전체 typecheck/lint/test(225개) 클린.
 - [x] 브라우저 E2E(3개 독립 세션): 서로 다른 방(`trackA`/`trackB`)에 입장한 두 세션이 서로의 메시지를 전혀 못 봄을 확인. `switchRoom`으로 실제 방을 옮기면 양쪽 세션의 참여자 목록이 즉시 갱신되고 대화가 새 방 것으로 완전히 교체됨을 확인. 새 방에서 닉네임이 이미 쓰이고 있으면 거부되고 원래 방 소속이 그대로 유지됨을 확인(3번째 세션으로 재현). 마지막 멤버가 나간 방이 목록에서 사라졌다가, 같은 이름으로 다시 입장하면 정확히 복구되는지 방 목록으로 확인. 배경 선택이 즉시 반영됨을 확인. 콘솔 에러 없음.
 
-### 5단계 — Complex 아바타 마감
-- [ ] 얼굴+몸통 오프셋 합성 렌더링을 실제 Complex 캐릭터(v1.0-pre 22종 중 복합형)로 전수 검증
-- [ ] `DifferentTorso` 개념(몸짓만 바꾸는 리액션, 원작의 `<Chr>`/`AddReaction`) — "리액션만 보내기" UI 액션 추가(선택적)
+### 5단계 — Complex 아바타 마감 — 완료 (2026-07-19)
+
+- [x] **얼굴+몸통 오프셋 합성 렌더링 15종 전수 검증**. `catalog.json`을 스캔해 v1.0-pre 22종 중 complex(얼굴+몸통 분리)가 정확히 15종(anna/armando/bolo/cro/dan/denise/hugh/lance/lynnea/margaret/mike/susan/tiki/tongtyed/xeno)임을 확인, 데이터 레벨 스캔으로 `flags` 조합을 비교한 결과 **susan 하나만 나머지 14종과 다름**(`headMask=false, torsoMask=true, torsoFirst=false` — 나머지는 전부 `headMask=true, torsoMask=false, torsoFirst=true`)을 발견 — z-order(어느 쪽이 위에 그려지는지)와 마스크 대상이 반대인 유일한 케이스라 렌더링 버그가 있다면 susan에서만 드러날 가능성이 높았다. 브라우저 E2E로 15종 전원을 "SO GREAT!!!"(SHOUT)로 발화시켜 실제 합성 결과를 육안 확인 — susan 포함 전원 정상(정렬 어긋남, 마스크 누락, z-order 역전 없음). 콘솔 에러 없음.
+- [x] **리액션(`<Chr>`/`AddReaction`) 구현**(사용자 확인 후 진행). `saywnd.cpp`(`CSayCtrl::OnChar`, 빈 메시지에서 Enter 시 `<Chr>` 전송)와 `panel.cpp`(`AddReaction`)를 추적해 확정: 말풍선 없이 현재 반응 포즈만 패널에 반영하고, AddLine과 달리 "화자가 이미 패널에 있으면 새 패널" 규칙이 없어(대신 바디 5개 캡을 씀) 같은 패널 안에서 포즈만 교체(`ReplaceBody`)할 수 있다. `RecordBody`(현재 포즈 기록) + `ResetAvatar`/`SetNeutral`(다음 NEUTRAL 미리 계산)이라는 원작의 두 단계는, 매 리액션 호출마다 감정 후보 없이 `matchPose`를 호출하는 것과 결과적으로 완전히 동일함을 확인(라운드로빈이 한 칸씩 정확히 전진) — 별도 상태 없이 그대로 포팅됨.
+  - `packages/comic-engine`: `ReactionEvent`/`FoldEvent` 유니온 추가(`SayEvent`에 `type:"say"` 태그 부여), `shouldStartNewReactionPanel`/`replaceOrAddBody` 신규.
+  - 프로토콜: `react` 액션(부가 필드 없음), `historyEntrySchema`를 `say`/`reaction` 판별 유니온으로 확장.
+  - `apps/server`: `Room.react(actorId)` — `matchPose(avatar, [], poseState)`로 NEUTRAL 라운드로빈 포즈를 계산해 EventStore에 기록·브로드캐스트.
+  - `apps/web`: 메시지 입력이 비어있으면 제출 버튼이 "리액션 보내기"로 바뀌고 `connection.react()`를 호출(원작의 "빈 메시지+Enter"와 동일 트리거).
+  - 단위 테스트 다수 추가(comic-engine의 fold/panel 리액션 케이스, protocol의 react/reaction 스키마, server의 `Room.react` — 전체 241개). 브라우저 E2E(2세션)로 말풍선 없는 렌더링, NEUTRAL 라운드로빈 진행(반복 클릭 시 포즈가 매번 달라짐), 이미 패널에 있으면 새 패널 없이 포즈만 교체, 다른 세션 브로드캐스트, 실제 발화와의 혼합까지 확인. 콘솔 에러 없음.
 
 ## 완료 조건 (Acceptance)
 - [x] 4가지 발화 모드가 시각적으로 뚜렷이 구분됨 (1단계에서 달성, 브라우저 E2E로 확인)
 - [x] 2개 이상의 방을 오가며 대화 가능, 방별 히스토리 독립 (4단계, 3개 독립 세션으로 확인)
 - [x] 로컬 미리보기가 즉시 뜨고, 서버 확정 후 부자연스러운 점프 없이 정착 (3단계) — devtools 네트워크 스로틀로 직접 검증하지는 않았지만, 로컬 계산이 서버와 완전히 동일한 comic-engine 코드+상태를 쓰므로(같은 입력→같은 출력) 지연 여부와 무관하게 항상 무점프 재조정이 보장됨을 설계로 확인하고 단위 테스트(`reconcilePending`)로 그 등가성을 검증했다.
+
+## 전체 재검증(2026-07-19, 사용자 요청으로 1~5단계 전체를 원본과 다시 대조)
+
+- **실제 버그 발견·수정**: `Room.changeNick()`의 "실제로 바뀌었는지" 체크가 `===`(대소문자 구분)였는데, 바로 아래 `isNickTaken()`은 대소문자를 무시해 서로 앞뒤가 안 맞았다. 원작 `ProcessNick`은 `stricmp`(대소문자 무시)로 비교해 대소문자만 다른 변경(`"alice"→"ALICE"`)은 조용히 무시한다 — 이전 코드는 이런 경우를 "진짜 변경"으로 처리해버려 무의미한 memberList 재브로드캐스트가 발생했다. `stricmp`와 동일하게 대소문자 무시 비교로 고치고 회귀 테스트 추가(`room.test.ts`).
+- **설계 확인 후 현행 유지로 결정**: `irc.cpp`(`GetAddressees2`/`whisperees`, `saywnd.cpp`의 `GetSelectedPuis`)를 보니 원작 귓속말은 멤버 목록에서 여러 명을 동시 선택해(`PRIVMSG nick1,nick2,... :msg`) 다중 대상에게 보낼 수 있었다 — 우리 구현은 `targetActorId` 하나만 지원한다. 사용자에게 확인한 결과 **다중 대상 지원은 추가하지 않고 현재의 단일 대상 설계를 유지**하기로 확정(현대적 1:1 DM에 가까운 UX가 더 낫다고 판단, 다중 선택 UI/프로토콜 확장은 이 기능의 가치 대비 과함).
+- **경미해서 그대로 둔 항목**: `panel.cpp`의 `AddLine`은 `mode==SM_ACTION`이면 `<Chr>` 문자열 검사보다 먼저 `StartNewPanel()`을 호출한다 — 즉 원작에서 "액션" 모드가 선택된 채로 빈 메시지(`<Chr>`)를 보내면 그 리액션이 강제로 새 패널을 연다. 우리 구현의 리액션은 모드와 완전히 무관하게 동작해 이 부수효과를 재현하지 않는다. 코드 구조상의 우연한 상호작용에 가까워 보이고 체감 영향이 거의 없어 수정하지 않기로 함(필요해지면 `react` 액션에 현재 선택된 모드를 실어 서버가 `mode==="action"`일 때만 강제 새 패널로 넘기면 된다).
+- 그 외(멀티룸의 switchRoom/listRooms/backdrop, Complex 아바타 15종 렌더링, 리액션의 새/클론 패널 판단·ReplaceBody 순서)는 원본과 다시 대조해 전부 정확히 일치함을 재확인, 코드 변경 없음.
+- 워크스페이스 전체 typecheck/lint/test(242개) 클린.

@@ -77,6 +77,12 @@ const listRoomsActionSchema = z.object({
   type: z.literal("listRooms"),
 });
 
+// saywnd.cpp의 CSayCtrl::OnChar 포팅: 빈 메시지 상태에서 Enter를 치면(원작의 "<Chr>") 말풍선 없이
+// 현재 반응 포즈만 패널에 반영한다. text/mode/targetActorId가 없다 — 리액션은 항상 무언이다.
+const reactActionSchema = z.object({
+  type: z.literal("react"),
+});
+
 export const clientActionSchema = z
   .discriminatedUnion("type", [
     joinActionSchema,
@@ -84,6 +90,7 @@ export const clientActionSchema = z
     changeNickActionSchema,
     switchRoomActionSchema,
     listRoomsActionSchema,
+    reactActionSchema,
   ])
   .refine((action) => action.type !== "say" || action.mode !== "whisper" || action.targetActorId !== undefined, {
     message: "whisper requires targetActorId",
@@ -109,8 +116,21 @@ const sayHistoryEntrySchema = z.object({
   ts: z.number(),
 });
 
-export const historyEntrySchema = sayHistoryEntrySchema;
+// panel.cpp의 AddReaction(id) 포팅 결과 — 말풍선이 없다는 점이 sayHistoryEntrySchema와의
+// 유일한 본질적 차이다(text/emotion/mode/targetActorId/clientId 전부 해당 없음).
+const reactionHistoryEntrySchema = z.object({
+  type: z.literal("reaction"),
+  actorId: z.string(),
+  nick: z.string(),
+  characterId: z.string(),
+  pose: poseSelectionSchema,
+  ts: z.number(),
+});
+
+export const historyEntrySchema = z.discriminatedUnion("type", [sayHistoryEntrySchema, reactionHistoryEntrySchema]);
 export type HistoryEntry = z.infer<typeof historyEntrySchema>;
+export type SayHistoryEntry = z.infer<typeof sayHistoryEntrySchema>;
+export type ReactionHistoryEntry = z.infer<typeof reactionHistoryEntrySchema>;
 
 const memberSchema = z.object({
   actorId: z.string(),

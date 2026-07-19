@@ -36,3 +36,37 @@ export function fetchSpeaker(panel: Panel, actorId: string, characterId: string,
   panel.bodies.push(body);
   return body;
 }
+
+export interface ShouldStartNewReactionPanelInput {
+  currentPanel: Panel | null;
+  totalPanelCount: number;
+}
+
+/**
+ * panel.cpp의 CUnitPanelPage::AddReaction 앞부분(새/클론 판단) 포팅. AddLine과 조건이 다르다 —
+ * "화자가 이미 패널에 있음" 강제 신규 조건이 **없고**(리액션은 같은 패널 안에서 포즈만 갱신할
+ * 수 있어야 하므로), 대신 바디 5개 캡을 쓴다(`oldP->m_bodies.GetCount() >= 5` — AddLine의
+ * 말풍선 5개 캡과는 다른 카운트).
+ */
+export function shouldStartNewReactionPanel({ currentPanel, totalPanelCount }: ShouldStartNewReactionPanelInput): boolean {
+  if (!currentPanel) return true;
+  if (currentPanel.bodies.length >= 5) return true;
+  if (totalPanelCount < 2) return true;
+  return false;
+}
+
+/**
+ * panel.cpp의 CPanel::ReplaceBody(있으면 포즈 교체) + FetchSpeaker(없으면 추가) 조합 포팅 —
+ * AddReaction이 정확히 이 순서로 호출한다(`if (!newP->ReplaceBody(id)) newP->FetchSpeaker(id);`).
+ * fetchSpeaker와 달리 이미 있는 경우 기존 포즈를 새 포즈로 덮어쓴다(flip은 그대로 유지 —
+ * 어차피 doGreedyOrdering이 뒤에서 다시 계산해 덮어쓴다).
+ */
+export function replaceOrAddBody(panel: Panel, actorId: string, characterId: string, pose: PoseSelection): PanelBody {
+  const index = panel.bodies.findIndex((b) => b.actorId === actorId);
+  if (index >= 0) {
+    const replaced: PanelBody = { actorId, characterId, pose, flip: panel.bodies[index]!.flip };
+    panel.bodies[index] = replaced;
+    return replaced;
+  }
+  return fetchSpeaker(panel, actorId, characterId, pose);
+}

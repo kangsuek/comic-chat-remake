@@ -8,7 +8,7 @@ import {
   type SpeechMode,
 } from "@comic-chat/comic-engine";
 import type { AvatarManifest } from "@comic-chat/asset-manifest-types";
-import type { HistoryEntry } from "@comic-chat/protocol";
+import type { HistoryEntry, SayHistoryEntry } from "@comic-chat/protocol";
 import { useCallback, useEffect, useReducer, useRef } from "react";
 import type { RoomConnection } from "./useRoomConnection";
 
@@ -35,7 +35,7 @@ export interface BuildProvisionalEntryInput {
  * 그대로 반복해 "서버 확정 전 잠정" historyEntry를 만든다. React에 의존하지 않는 순수 함수로
  * 뽑아 useOptimisticSay.test.ts에서 직접 검증한다.
  */
-export function buildProvisionalEntry(input: BuildProvisionalEntryInput): HistoryEntry {
+export function buildProvisionalEntry(input: BuildProvisionalEntryInput): SayHistoryEntry {
   const resolution = resolveEmotion(input.text, rules);
   const pose = matchPose(input.avatar, resolution.candidates, input.poseState);
 
@@ -69,7 +69,8 @@ export function reconcilePending(
 ): boolean {
   let changed = false;
   for (const entry of confirmedEntries) {
-    if (!entry.clientId || !pending.delete(entry.clientId)) continue;
+    // reaction 이벤트는 낙관적 미리보기 대상이 아니라 clientId 자체가 없다(항상 즉시 전송).
+    if (entry.type !== "say" || !entry.clientId || !pending.delete(entry.clientId)) continue;
     changed = true;
     if (entry.actorId !== selfActorId) continue;
     if (entry.pose.kind === "complex") {

@@ -1,10 +1,14 @@
 import { describe, expect, it } from "vitest";
-import { foldEvents, type SayEvent } from "./fold.js";
+import { foldEvents, type ReactionEvent, type SayEvent } from "./fold.js";
 
 const simplePose = { kind: "simple", bodyIndex: 0 } as const;
 
 function say(actorId: string, text: string): SayEvent {
-  return { actorId, characterId: "mike", mode: "say", text, pose: simplePose };
+  return { type: "say", actorId, characterId: "mike", mode: "say", text, pose: simplePose };
+}
+
+function react(actorId: string, pose: SayEvent["pose"] = simplePose): ReactionEvent {
+  return { type: "reaction", actorId, characterId: "mike", pose };
 }
 
 describe("foldEvents", () => {
@@ -78,5 +82,51 @@ describe("foldEvents", () => {
     }
 
     expect(incremental).toEqual(whole);
+  });
+
+  describe("reaction 이벤트(AddReaction 포팅)", () => {
+    // 첫 두 이벤트는 항상 새 패널이 열리는 "설정샷" 규칙 때문에(위 테스트들과 동일한 이유),
+    // 실제로 검증하려는 시나리오는 항상 이 "몸풀기" 두 이벤트 다음부터 시작한다(기존 "말풍선
+    // 5개 캡" 테스트와 동일한 패턴). warmup의 마지막 화자(y)는 클론 체인을 타고 이어지는
+    // 패널에 계속 남아있으므로, 절대 개수 대신 "리액션 전/후 비교"로 검증한다.
+    const warmup = [say("x", "warmup1"), say("y", "warmup2")];
+
+    it("말풍선을 추가하지 않는다", () => {
+      const before = foldEvents([...warmup, say("alice", "hi")]);
+      const after = foldEvents([...warmup, say("alice", "hi"), react("alice")]);
+      expect(after.panels.at(-1)!.balloons).toEqual(before.panels.at(-1)!.balloons);
+    });
+
+    it("이미 패널에 있는 화자의 리액션은 새 패널을 만들지 않고 그 자리에서 포즈만 바꾼다(AddLine과 반대)", () => {
+      const complexPose = { kind: "complex", faceIndex: 1, torsoIndex: 0 } as const;
+      const before = foldEvents([...warmup, say("alice", "1")]);
+      const after = foldEvents([...warmup, say("alice", "1"), react("alice", complexPose)]);
+      // say였다면 이미 패널에 있는 alice가 다시 등장 시 새 패널이 열렸겠지만, reaction은 그대로 클론된다.
+      expect(after.panels).toHaveLength(before.panels.length);
+      expect(after.panels.at(-1)!.bodies.map((b) => b.actorId).sort()).toEqual(
+        before.panels.at(-1)!.bodies.map((b) => b.actorId).sort(),
+      );
+      expect(after.panels.at(-1)!.bodies.find((b) => b.actorId === "alice")!.pose).toEqual(complexPose);
+    });
+
+    it("패널에 없는 화자의 리액션은 새로 합류시킨다(말풍선 없이)", () => {
+      const before = foldEvents([...warmup, say("alice", "1")]);
+      const after = foldEvents([...warmup, say("alice", "1"), react("carol")]);
+      expect(after.panels).toHaveLength(before.panels.length); // 새 패널이 아니라 클론
+      expect(after.panels.at(-1)!.bodies.map((b) => b.actorId).sort()).toEqual(
+        [...before.panels.at(-1)!.bodies.map((b) => b.actorId), "carol"].sort(),
+      );
+      expect(after.panels.at(-1)!.balloons).toEqual(before.panels.at(-1)!.balloons); // 말풍선은 그대로
+    });
+
+    it("리액션도 패널당 바디 5개 캡을 넘으면 새 패널을 만든다", () => {
+      // warmup 뒤 y가 이미 있으므로 리액션 4명(a~d)만 더하면 정확히 5명(y+a+b+c+d)이 찬다.
+      const events = [...warmup, react("a"), react("b"), react("c"), react("d")];
+      const beforeCap = foldEvents(events);
+      expect(beforeCap.panels.at(-1)!.bodies).toHaveLength(5);
+
+      const afterCap = foldEvents([...events, react("e")]);
+      expect(afterCap.panels).toHaveLength(beforeCap.panels.length + 1); // 5명이 찬 뒤 6번째는 새 패널로
+    });
   });
 });

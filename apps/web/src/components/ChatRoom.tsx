@@ -1,4 +1,4 @@
-import { foldEvents, type SayEvent, type SpeechMode } from "@comic-chat/comic-engine";
+import { foldEvents, type FoldEvent, type SpeechMode } from "@comic-chat/comic-engine";
 import type { HistoryEntry } from "@comic-chat/protocol";
 import { useMemo, useState } from "react";
 import { avatarAssetUrl } from "../assets";
@@ -14,8 +14,11 @@ interface ChatRoomProps {
   catalogState: AssetCatalogState;
 }
 
-function toSayEvent(entry: HistoryEntry): SayEvent {
-  return { actorId: entry.actorId, characterId: entry.characterId, mode: entry.mode, text: entry.text, pose: entry.pose };
+function toFoldEvent(entry: HistoryEntry): FoldEvent {
+  if (entry.type === "say") {
+    return { type: "say", actorId: entry.actorId, characterId: entry.characterId, mode: entry.mode, text: entry.text, pose: entry.pose };
+  }
+  return { type: "reaction", actorId: entry.actorId, characterId: entry.characterId, pose: entry.pose };
 }
 
 // shout은 원작에서 별도 말풍선 스타일이 없다(panel.cpp의 MakeBalloon이 SM_SHOUT 분기를
@@ -61,7 +64,7 @@ export function ChatRoom({ nick, connection, catalogState }: ChatRoomProps) {
 
   // 클라이언트도 서버(Room)와 동일한 foldEvents()를 그대로 돌려 패널 구조를 재구성한다
   // (plan.md: 서버/클라가 같은 워크스페이스 링크로 동일 로직을 공유 — 이원화 방지).
-  const fold = useMemo(() => foldEvents(optimisticEntries.map(toSayEvent)), [optimisticEntries]);
+  const fold = useMemo(() => foldEvents(optimisticEntries.map(toFoldEvent)), [optimisticEntries]);
   const actorNicks = useMemo(() => {
     const map = new Map<string, string>();
     for (const entry of optimisticEntries) map.set(entry.actorId, entry.nick);
@@ -69,7 +72,10 @@ export function ChatRoom({ nick, connection, catalogState }: ChatRoomProps) {
   }, [optimisticEntries]);
 
   const whisperCandidates = connection.members.filter((m) => m.actorId !== connection.selfActorId);
-  const canSubmit = draft.trim().length > 0 && (mode !== "whisper" || whisperTarget !== "");
+  const isEmpty = draft.trim().length === 0;
+  // saywnd.cpp의 OnChar 포팅: 빈 메시지에서 Enter를 치면(원작의 "<Chr>") 말풍선 없이 반응만
+  // 보낸다 — whisper 대상 선택 여부는 리액션과 무관하므로 빈 입력이면 항상 보낼 수 있다.
+  const canSubmit = isEmpty || mode !== "whisper" || whisperTarget !== "";
 
   return (
     <div>
@@ -146,9 +152,13 @@ export function ChatRoom({ nick, connection, catalogState }: ChatRoomProps) {
         <form
           onSubmit={(e) => {
             e.preventDefault();
+            if (!canSubmit) return;
             const trimmed = draft.trim();
-            if (!trimmed || !canSubmit) return;
-            optimisticSay(trimmed, mode, mode === "whisper" ? whisperTarget : undefined);
+            if (trimmed) {
+              optimisticSay(trimmed, mode, mode === "whisper" ? whisperTarget : undefined);
+            } else {
+              connection.react();
+            }
             setDraft("");
           }}
         >
@@ -175,7 +185,7 @@ export function ChatRoom({ nick, connection, catalogState }: ChatRoomProps) {
             placeholder={`${nick}로 말하기...`}
           />
           <button type="submit" disabled={!canSubmit}>
-            보내기
+            {isEmpty ? "리액션 보내기" : "보내기"}
           </button>
           {preview && (
             <span>

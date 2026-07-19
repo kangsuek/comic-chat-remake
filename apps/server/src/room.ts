@@ -8,11 +8,11 @@ import {
   loadRules,
   matchPose,
   resolveEmotion,
+  type FoldEvent,
   type FoldResult,
   type Panel,
   type PoseState,
   type RuleSet,
-  type SayEvent,
   type SpeechMode,
 } from "@comic-chat/comic-engine";
 import type { HistoryEntry, Member, ServerMessage } from "@comic-chat/protocol";
@@ -21,8 +21,11 @@ import { EventStore } from "./eventStore.js";
 
 export const DEFAULT_DB_PATH = path.resolve(import.meta.dirname, "../data/events.db");
 
-function toSayEvent(entry: HistoryEntry): SayEvent {
-  return { actorId: entry.actorId, characterId: entry.characterId, mode: entry.mode, text: entry.text, pose: entry.pose };
+function toFoldEvent(entry: HistoryEntry): FoldEvent {
+  if (entry.type === "say") {
+    return { type: "say", actorId: entry.actorId, characterId: entry.characterId, mode: entry.mode, text: entry.text, pose: entry.pose };
+  }
+  return { type: "reaction", actorId: entry.actorId, characterId: entry.characterId, pose: entry.pose };
 }
 
 export interface ConnectedClient {
@@ -64,7 +67,7 @@ export class Room {
     const snapshot = this.eventStore.loadSnapshot(roomId);
     const base = snapshot?.state ?? { panels: [], hysteresis: {} };
     const rest = this.eventStore.loadSince(roomId, snapshot?.seq ?? 0);
-    this.fold = foldEvents(rest.map((r) => toSayEvent(r.entry)), base);
+    this.fold = foldEvents(rest.map((r) => toFoldEvent(r.entry)), base);
     this.lastSeq = rest.at(-1)?.seq ?? snapshot?.seq ?? 0;
   }
 
@@ -119,7 +122,11 @@ export class Room {
       this.sendTo(actorId, { type: "changeNickRejected", reason: "invalidNick" });
       return;
     }
-    if (trimmed === client.nick) return; // 원작 ProcessNick: stricmp로 실제 다를 때만 처리
+    // 원작 ProcessNick: `stricmp(pui->GetName(), newNick)`(대소문자 무시 비교)가 0이면(즉 대소문자만
+    // 다르면) 아무 처리도 안 한다 — 재검증 중 발견: 이전 코드는 `===`(대소문자 구분)로 비교해서
+    // "alice"→"Alice" 같은 대소문자만 다른 변경을 실제 변경으로 처리해버렸다(대소문자 무시로
+    // 비교하는 isNickTaken과도 앞뒤가 안 맞았음). stricmp와 동일하게 맞춘다.
+    if (trimmed.toLowerCase() === client.nick.toLowerCase()) return;
     if (this.isNickTaken(trimmed, actorId)) {
       this.sendTo(actorId, { type: "changeNickRejected", reason: "nickTaken" });
       return;
@@ -180,7 +187,7 @@ export class Room {
       ts: Date.now(),
     };
     this.lastSeq = this.eventStore.append(this.roomId, entry);
-    this.fold = foldEvents([toSayEvent(entry)], this.fold);
+    this.fold = foldEvents([toFoldEvent(entry)], this.fold);
     this.eventStore.saveSnapshot(this.roomId, this.lastSeq, this.fold);
 
     if (mode === "whisper") {
@@ -189,6 +196,36 @@ export class Room {
     } else {
       this.broadcast({ type: "historyEntry", entry });
     }
+    return entry;
+  }
+
+  /**
+   * panel.cpp의 AddReaction(id) 포팅 — saywnd.cpp의 OnChar가 빈 메시지에서 Enter를 치면
+   * 트리거하는 "<Chr>"에 대응한다. 감정 후보 없이 matchPose를 호출하면 NEUTRAL 라운드로빈
+   * 폴백으로 바로 떨어지는데, 이것이 원작의 "현재 포즈를 패널에 기록(RecordBody) → 다음
+   * NEUTRAL을 미리 계산(ResetAvatar/SetNeutral)"이 두 단계였던 것과 결과적으로 완전히
+   * 동일하다 — 매 호출마다 poseState.lastFaceIndex/lastTorsoIndex/lastBodyIndex 다음
+   * NEUTRAL로 정확히 한 칸씩 전진하며 기록된다.
+   */
+  react(actorId: string): HistoryEntry | null {
+    const client = this.clients.get(actorId);
+    const avatar = client && this.avatarCatalog.get(client.characterId);
+    const poseState = this.poseStates.get(actorId);
+    if (!client || !avatar || !poseState) return null;
+
+    const pose = matchPose(avatar, [], poseState);
+    const entry: HistoryEntry = {
+      type: "reaction",
+      actorId: client.actorId,
+      nick: client.nick,
+      characterId: client.characterId,
+      pose,
+      ts: Date.now(),
+    };
+    this.lastSeq = this.eventStore.append(this.roomId, entry);
+    this.fold = foldEvents([toFoldEvent(entry)], this.fold);
+    this.eventStore.saveSnapshot(this.roomId, this.lastSeq, this.fold);
+    this.broadcast({ type: "historyEntry", entry });
     return entry;
   }
 

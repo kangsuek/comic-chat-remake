@@ -14,7 +14,13 @@ function entry(actorId: string, text: string, ts: number, overrides: Partial<His
     pose: { kind: "simple", bodyIndex: 0 },
     ts,
     ...overrides,
-  };
+  } as HistoryEntry;
+}
+
+/** 이 파일의 모든 fixture는 항상 say 타입이라(entry() 참고) 텍스트를 안전하게 꺼낼 수 있다. */
+function textOf(e: HistoryEntry): string {
+  if (e.type !== "say") throw new Error("expected a say entry");
+  return e.text;
 }
 
 describe("EventStore", () => {
@@ -30,15 +36,15 @@ describe("EventStore", () => {
     store.append("lobby", entry("alice", "3", 300));
 
     const loaded = store.loadAll("lobby");
-    expect(loaded.map((e) => e.text)).toEqual(["1", "2", "3"]);
+    expect(loaded.map(textOf)).toEqual(["1", "2", "3"]);
   });
 
   it("room_id가 다르면 서로 섞이지 않는다", () => {
     store.append("lobby", entry("alice", "lobby-msg", 100));
     store.append("other-room", entry("bob", "other-msg", 100));
 
-    expect(store.loadAll("lobby").map((e) => e.text)).toEqual(["lobby-msg"]);
-    expect(store.loadAll("other-room").map((e) => e.text)).toEqual(["other-msg"]);
+    expect(store.loadAll("lobby").map(textOf)).toEqual(["lobby-msg"]);
+    expect(store.loadAll("other-room").map(textOf)).toEqual(["other-msg"]);
   });
 
   it("이벤트가 없는 room은 빈 배열을 돌려준다", () => {
@@ -56,12 +62,12 @@ describe("EventStore", () => {
     store.append("lobby", entry("bob", "2", 200));
     store.append("lobby", entry("alice", "3", 300));
 
-    expect(store.loadSince("lobby", 0).map((e) => ({ seq: e.seq, text: e.entry.text }))).toEqual([
+    expect(store.loadSince("lobby", 0).map((e) => ({ seq: e.seq, text: textOf(e.entry) }))).toEqual([
       { seq: 1, text: "1" },
       { seq: 2, text: "2" },
       { seq: 3, text: "3" },
     ]);
-    expect(store.loadSince("lobby", 1).map((e) => e.entry.text)).toEqual(["2", "3"]);
+    expect(store.loadSince("lobby", 1).map((e) => textOf(e.entry))).toEqual(["2", "3"]);
     expect(store.loadSince("lobby", 3)).toEqual([]); // 마지막 seq와 같으면 아무것도 없음
   });
 
@@ -82,15 +88,15 @@ describe("EventStore", () => {
   describe("loadVisibleTo", () => {
     it("whisper가 아닌 이벤트는 모두에게 보인다", () => {
       store.append("lobby", entry("alice", "hi everyone", 100));
-      expect(store.loadVisibleTo("lobby", "carol").map((e) => e.text)).toEqual(["hi everyone"]);
+      expect(store.loadVisibleTo("lobby", "carol").map(textOf)).toEqual(["hi everyone"]);
     });
 
     it("whisper는 발신자와 targetActorId 본인에게만 보인다", () => {
       store.append("lobby", entry("alice", "psst", 100, { mode: "whisper", targetActorId: "bob" }));
 
-      expect(store.loadVisibleTo("lobby", "alice").map((e) => e.text)).toEqual(["psst"]); // 발신자
-      expect(store.loadVisibleTo("lobby", "bob").map((e) => e.text)).toEqual(["psst"]); // 수신자
-      expect(store.loadVisibleTo("lobby", "carol").map((e) => e.text)).toEqual([]); // 제3자에게는 안 보임
+      expect(store.loadVisibleTo("lobby", "alice").map(textOf)).toEqual(["psst"]); // 발신자
+      expect(store.loadVisibleTo("lobby", "bob").map(textOf)).toEqual(["psst"]); // 수신자
+      expect(store.loadVisibleTo("lobby", "carol").map(textOf)).toEqual([]); // 제3자에게는 안 보임
     });
 
     it("일반 발화와 whisper가 섞여 있으면 whisper만 골라 걸러낸다", () => {
@@ -98,8 +104,8 @@ describe("EventStore", () => {
       store.append("lobby", entry("alice", "secret", 200, { mode: "whisper", targetActorId: "bob" }));
       store.append("lobby", entry("bob", "public 2", 300));
 
-      expect(store.loadVisibleTo("lobby", "carol").map((e) => e.text)).toEqual(["public 1", "public 2"]);
-      expect(store.loadVisibleTo("lobby", "bob").map((e) => e.text)).toEqual(["public 1", "secret", "public 2"]);
+      expect(store.loadVisibleTo("lobby", "carol").map(textOf)).toEqual(["public 1", "public 2"]);
+      expect(store.loadVisibleTo("lobby", "bob").map(textOf)).toEqual(["public 1", "secret", "public 2"]);
     });
   });
 });

@@ -39,6 +39,8 @@ export interface RoomConnection {
   /** 같은 연결을 유지한 채 다른 방으로 옮긴다(irc.cpp의 ChatSwitchChannel 포팅). */
   switchRoom: (roomId: string) => void;
   listRooms: () => void;
+  /** 말풍선 없이 현재 반응 포즈만 패널에 남긴다(saywnd.cpp의 "<Chr>", 빈 메시지 Enter에 대응). */
+  react: () => void;
 }
 
 /** WS 연결을 유지하며 서버 브로드캐스트(historyEntry/memberList)로 상태를 갱신하는 훅. */
@@ -145,6 +147,7 @@ export function useRoomConnection(url: string): RoomConnection {
     [sendAction],
   );
   const listRooms = useCallback(() => sendAction({ type: "listRooms" }), [sendAction]);
+  const react = useCallback(() => sendAction({ type: "react" }), [sendAction]);
 
   return {
     status,
@@ -161,5 +164,6 @@ export function useRoomConnection(url: string): RoomConnection {
     changeNick,
     switchRoom,
     listRooms,
+    react,
   };
 }

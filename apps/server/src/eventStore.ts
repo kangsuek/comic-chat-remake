@@ -94,12 +94,12 @@ export class EventStore {
 
   /**
    * 특정 사용자(viewerActorId)에게 보여줘도 되는 이벤트만 돌려준다 — whisper는 발신자·수신자만
-   * 볼 수 있고, 그 외 모드는 전부 공개다. join 시 history 재생, 즉 클라이언트가 실제로 받는
-   * 데이터를 만들 때는 항상 이 메서드를 써야 한다.
+   * 볼 수 있고, 그 외 모드는 전부 공개다(reaction은 애초에 whisper 개념이 없어 항상 공개).
+   * join 시 history 재생, 즉 클라이언트가 실제로 받는 데이터를 만들 때는 항상 이 메서드를 써야 한다.
    */
   loadVisibleTo(roomId: string, viewerActorId: string): HistoryEntry[] {
     return this.loadAll(roomId).filter(
-      (entry) => entry.mode !== "whisper" || entry.actorId === viewerActorId || entry.targetActorId === viewerActorId,
+      (entry) => entry.type !== "say" || entry.mode !== "whisper" || entry.actorId === viewerActorId || entry.targetActorId === viewerActorId,
     );
   }
 
