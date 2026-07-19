@@ -29,6 +29,16 @@ describe("evalPair", () => {
     const b: PlacementPerson = { actorId: "b", talkTo: [] };
     expect(evalPair(a, false, b, false, 2)).toBe(0);
   });
+
+  it("talkTo에 같은 대상이 중복으로 들어있으면 원작처럼 매칭될 때마다 페널티가 반복 적용된다", () => {
+    // panel.cpp의 EvalPair는 av1->m_talkTo를 전부 순회하며 b2와 일치하는 항목마다 페널티를
+    // 다시 더한다 — .includes() 같은 "존재 여부만 한 번 확인"이 아니다.
+    const a: PlacementPerson = { actorId: "a", talkTo: ["b", "b"] };
+    const b: PlacementPerson = { actorId: "b", talkTo: [] };
+    const once: PlacementPerson = { actorId: "a", talkTo: ["b"] };
+
+    expect(evalPair(a, false, b, false, 3)).toBe(2 * evalPair(once, false, b, false, 3));
+  });
 });
 
 describe("addTalkTos", () => {

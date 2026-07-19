@@ -61,10 +61,16 @@ export function evalPair(b1: PlacementPerson, b1Flip: boolean, b2: PlacementPers
   if (b1.talkTo.length === 0) {
     if (b1Flip !== desiredDir) rating += 4; // 세상을 향해 말하는데 이 방향을 안 보고 있음
     if (b2Flip === desiredDir) rating += 2; // 상대가 나를 안 보고 있음(경미)
-  } else if (b1.talkTo.includes(b2.actorId)) {
-    if (b1Flip === desiredDir) rating += 4 * (distance - 1); // 방향은 맞음 — 거리 비례 약한 페널티
-    else rating += 40; // 말을 걸면서 그쪽을 안 보고 있음 — 중벌점
-    if (b2Flip === desiredDir) rating += 4; // 상대가 나를 안 보고 있음
+  } else {
+    // 원작은 talkTo 배열 전체를 순회하며 b2와 일치하는 항목마다 페널티를 "반복" 적용한다
+    // (av1->m_talkTo에 같은 대상이 중복으로 들어있으면 그만큼 여러 번 더해짐) — .includes()로
+    // 존재 여부만 한 번 확인하면 이 중복 케이스에서 원작보다 페널티가 덜 매겨진다.
+    for (const targetId of b1.talkTo) {
+      if (targetId !== b2.actorId) continue;
+      if (b1Flip === desiredDir) rating += 4 * (distance - 1); // 방향은 맞음 — 거리 비례 약한 페널티
+      else rating += 40; // 말을 걸면서 그쪽을 안 보고 있음 — 중벌점
+      if (b2Flip === desiredDir) rating += 4; // 상대가 나를 안 보고 있음
+    }
   }
 
   return rating;

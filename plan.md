@@ -152,7 +152,7 @@ manifest.ts     # JSON 매니페스트 출력
 ## 가장 리스크가 큰 미지수 (선행 스파이크 필요)
 
 1. ~~**BMP RLE4/RLE8 디코딩 + 마스크/아우라 합성 엣지케이스**~~ — ✅ 2026-07-18 스파이크 완료. RLE4만 필요(RLE8 불필요), 합성 알고리즘(MERGEPAINT+SRCAND → 알파합성) 확정. 상세는 위 "자산 변환 파이프라인" 및 [`docs/phases/02-static-avatar-rendering.md`](docs/phases/02-static-avatar-rendering.md) 참고.
-2. **말풍선 꼬리/route-region 충돌 기하** — 스플라인 수식을 포팅하지 않기로 했으므로, 최소 랜덤 말풍선+꼬리 알고리즘을 프로토타입해 여러 화자 패널에서 눈으로 검증 후 본 엔진에 편입 (Phase 3 3단계에서 진행)
+2. ~~**말풍선 꼬리/route-region 충돌 기하**~~ — ✅ 2026-07-19 Phase 3 3단계 완료. route-region 스플라인 기하는 포팅하지 않고 "말풍선을 이전 말풍선이 끝난 지점부터 순서대로 쌓아 애초에 같은 세로 구간을 재사용하지 않는" 단순화된 충돌 회피로 대체 확정. 여러 화자(4~5명) 패널에서 말풍선이 겹치지 않고 쌓이는 것을 브라우저 E2E로 확인. 상세는 [`docs/phases/03-full-auto-layout.md`](docs/phases/03-full-auto-layout.md)의 3단계 참고.
 3. ~~**패널 클론-확장 상태관리**~~ — ✅ 2026-07-18 스파이크 완료. `panel.cpp`의 `AddLine`을 직접 추적해 확정: 패널 클론 조건은 plan.md 초안과 반대로 "같은 화자 연속 발화 시 새 패널, 새 화자 합류 시 클론"이었다(`AvatarInPanel` 체크). 클론 시 이전 패널은 `RemoveLastPanel`+`delete`로 버려지고 클론본이 교체 — "확정된 패널은 불변, 교체될 뿐"이라는 가정 확인됨. 상세는 [`docs/phases/03-full-auto-layout.md`](docs/phases/03-full-auto-layout.md)의 "0. 스파이크 결과" 참고.
 
 ## 주요 파일 (구현 시작 지점)
