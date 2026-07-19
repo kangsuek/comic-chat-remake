@@ -52,10 +52,13 @@ export function foldEvents(events: readonly SayEvent[], previous: FoldResult = E
 
     const speakers: PlacementPerson[] = panel.bodies.map((b) => ({ actorId: b.actorId, talkTo: [] }));
     const placed = doGreedyOrdering(speakers, hysteresis);
-    for (const { person, flip } of placed) {
-      const body = panel.bodies.find((b) => b.actorId === person.actorId)!;
-      body.flip = flip;
-    }
+    // placed는 doGreedyOrdering이 결정한 좌우 순서 그대로다 — panel.bodies도 이 순서로
+    // 재배열해야 렌더러가 배열 순서를 곧 화면 배치 순서로 쓸 수 있다(flip만 패치하고 삽입
+    // 순서를 그대로 두면 그리디 배치 결과와 실제 배열 순서가 어긋날 수 있었다).
+    panel.bodies = placed.map(({ person, flip }) => ({
+      ...panel.bodies.find((b) => b.actorId === person.actorId)!,
+      flip,
+    }));
     hysteresis = updateHysteresis(placed, hysteresis);
 
     panels = [...panels, panel];

@@ -71,15 +71,20 @@ interface ScaledBody {
   width: number;
   height: number;
   headHeight: number;
-  /** 바닥 기준 앵커 y(원작의 top[i] — panel 좌표는 위로 갈수록 증가, -unitHeight가 바닥). */
-  bottom: number;
+  /**
+   * 원작의 top[i](= -unitHeight + height) — panel 좌표는 위로 갈수록 증가하므로 이 값이 몸의
+   * "머리 쪽" y이고, 키가 클수록 값이 커진다(더 위로 올라감). 필드 이름을 `top`으로 두는 이유는
+   * `SetBBox(left, top[i]-height[i], right, top[i])` 호출에서 이 값이 그대로 `m_bbox.Top`이
+   * 되기 때문 — `bottom`(모든 몸이 공유하는 -unitHeight, 바닥)과 혼동하지 않도록 구분한다.
+   */
+  top: number;
   arrowXRatio: number;
 }
 
 /**
  * LayoutAvatars 포팅: 신장 정규화 → (폭 초과 시 축소 | 여유 있고 establishing 아니면 확대, 1.1배 미만 스냅) → 마진 배치.
- * 확대(zoom-in) 분기에서는 원작 그대로 바닥 앵커(top[i])를 재계산하지 않는다 — 정규화 시점의 바닥 위치에
- * 고정한 채 키만 키워 "발이 붙박인 채 확대"되는 느낌을 낸다. 축소 분기는 반대로 바닥 앵커도 다시 계산한다.
+ * 확대(zoom-in) 분기에서는 원작 그대로 머리 쪽 앵커(top[i])를 재계산하지 않는다 — 정규화 시점의 머리
+ * 위치에 고정한 채 키만 키워 "발이 붙박인 채 확대"되는 느낌을 낸다. 축소 분기는 반대로 앵커도 다시 계산한다.
  */
 export function layoutBodies(dims: readonly BodyDim[], input: ZoomLayoutInput): ZoomLayoutResult {
   const { unitWidth, unitHeight, zoomIn, establishing } = input;
@@ -96,7 +101,7 @@ export function layoutBodies(dims: readonly BodyDim[], input: ZoomLayoutInput): 
       width: round(scaleRatio * d.width),
       height: newHeight,
       headHeight: round(scaleRatio * d.headHeight),
-      bottom: -unitHeight + newHeight,
+      top: -unitHeight + newHeight,
       arrowXRatio: d.arrowXRatio,
     };
   });
@@ -109,7 +114,7 @@ export function layoutBodies(dims: readonly BodyDim[], input: ZoomLayoutInput): 
     const reduction = unitWidth / scaledWidth;
     final = scaled.map((b) => {
       const height = round(b.height * reduction);
-      return { ...b, height, width: round(b.width * reduction), bottom: -unitHeight + height };
+      return { ...b, height, width: round(b.width * reduction), top: -unitHeight + height };
     });
   } else if (zoomIn && !establishing) {
     const maxHeadHeight = Math.max(...scaled.map((b) => b.headHeight));
@@ -132,10 +137,10 @@ export function layoutBodies(dims: readonly BodyDim[], input: ZoomLayoutInput): 
   const boxes: BodyBox[] = final.map((b) => {
     const left = xOffset;
     const right = xOffset + b.width;
-    const top = b.bottom - b.height;
+    const bottom = b.top - b.height;
     const arrowX = left + round(b.arrowXRatio * (right - left));
     xOffset += b.width + margin;
-    return { actorId: b.actorId, left, top, right, bottom: b.bottom, arrowX };
+    return { actorId: b.actorId, left, top: b.top, right, bottom, arrowX };
   });
 
   return { boxes, zoomFactor };

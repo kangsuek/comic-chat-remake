@@ -35,6 +35,8 @@
 - `arrowX` 계산 순서 의존성 발견: 원작은 `DoGreedyOrdering`이 `m_flip`을 먼저 확정한 뒤 `GetDimInfo`를 호출해 arrowX를 구한다(미러링되면 anchor x위치도 반전). Stage 2/3 통합 시 반드시 `doGreedyOrdering()`의 flip 결과를 먼저 얻은 뒤 `arrowXRatio`를 계산해 `layoutBodies()`에 넘겨야 함 — `zoom.ts`의 `BodyDim.arrowXRatio`에 주석으로 명시.
 - 그 외 확인: `UpdateHistoresis`는 배치 끝(맨 왼쪽/오른쪽)에 있는 아바타의 반대쪽 이웃 값을 리셋하지 않고 이전 값을 그대로 남겨두는데(`placement.ts`의 `updateHysteresis`가 이미 이 동작을 정확히 재현), `DoGreedyOrdering`의 매직넘버 `bestRating=1000` 대신 `Infinity`를 쓴 것은 벤치마크상 안전한 의도적 개선(현실적 입력에서 1000을 넘는 rating이 나올 수 있어 더 견고함).
 
+**2차 재검증(2026-07-19, 3단계 착수 전)** — `zoom.ts`의 `BodyBox.top`/`.bottom` 필드가 원작과 반대로 뒤바뀌어 있던 실제 버그를 발견해 수정했다. 원작 `SetBBox(left, bottom, right, top)` 호출(`b->SetBBox(xOffset, top[i]-height[i], xOffset+width[i], top[i])`)에서 `m_bbox.Top = top[i]`(키에 비례해 커지는 머리 쪽 값)이고 `m_bbox.Bottom = top[i]-height[i] = -unitHeight`(모든 몸이 공유하는 바닥, 상수)인데, 포팅 코드는 이 둘을 바꿔 넣고 있었다(`.top` 필드에 상수 바닥값을, `.bottom` 필드에 키 비례 값을 반환). 지금까지는 이 값을 실제로 소비하는 렌더러가 없어(Stage 3에서 처음 연결됨) 눈에 보이는 버그는 없었지만, 그대로 뒀다면 3단계에서 캐릭터가 위아래로 뒤집혀 그려질 뻔했다. 필드 계산과 반환값을 원작 방향에 맞게 정정하고, `top`이 `bottom`보다 항상 크다는(그리고 `bottom`이 `-unitHeight`로 고정된다는) 회귀 테스트를 추가했다(`zoom.test.ts`, 13번째 테스트).
+
 ### 2단계 — 이벤트 소싱 백엔드 (`apps/server`) — 완료 (2026-07-19)
 - [x] SQLite(`better-sqlite3`) `events(id, room_id, seq, ts, actor_id, type, payload_json)` append-only 테이블 (`apps/server/src/eventStore.ts`). WAL 모드, `UNIQUE(room_id, seq)`. `payload_json`에 `HistoryEntry` 원문(감정/포즈 등 이미 계산된 값 포함)을 그대로 저장해 replay 시 재계산이 필요 없다.
 - [x] `foldEvents(events[]): FoldResult` — comic-engine 순수 함수(`packages/comic-engine/src/panel/fold.ts`, 서버/클라 공용). 1단계의 `shouldStartNewPanel`/`fetchSpeaker`/`doGreedyOrdering`/`updateHysteresis`를 그대로 재사용해 이벤트 로그를 패널 목록으로 fold. **스코프를 의도적으로 좁혔다**: 줌/픽셀 배치(`zoom.ts`)는 실제 자산 크기가 필요한 렌더링 시점 관심사라 3단계로 미뤘고, `AddTalkTos`(말을 건 상대 자동 합류)는 원작에서 아바타별 지속 선택 상태인데 현재 프로토콜에 addressing 필드가 아직 없어(항상 빈 배열) 지금 불러도 항상 no-op이므로 뺐다 — Phase 4에서 프로토콜에 talkTo가 추가되면 `speakers` 구성부에 이어붙이면 된다.
@@ -43,12 +45,22 @@
 - [x] (체크리스트에 없었지만 이 단계의 실질적 목적을 위해 추가) 새 프로토콜 메시지 `history`(서버→클라, `entries: HistoryEntry[]`)를 `join` 직후 그 클라이언트에게만 전송 — 새로고침/재접속해도 이전 대화가 보이는 것이 이 Phase의 데모 기준(`데모 기준` 섹션 참고)이라 서버 영속화만으로는 부족했다. `apps/web`의 `useRoomConnection`도 이 메시지로 `entries` 초기값을 세팅하도록 수정.
 - [x] 브라우저 E2E로 실제 재접속 replay 확인(두 차례): Alice로 2줄 발화(2패널 생성) → 페이지 새로고침 → 별도 신규 세션(Bob, 다른 캐릭터)으로 재입장 → 동일한 2패널이 그대로 재구성됨을 스크린샷으로 확인, 콘솔 에러 없음, `apps/server/data/events.db`에 실제 영속화 확인.
 
-### 3단계 — 말풍선 랜덤화 + Konva 커스텀 모양
-- [ ] `estimateBalloonSize(text, freeRect, rng)` — 문자 수 기반 폭 근사 + 확정된 랜덤 공식(짧으면 고정, 길면 minWidth~maxWidth 랜덤)
-- [ ] `positionBalloon(anchorX, goalWidth, freeRect, rng)` — arrowX 기준 랜덤 배치 + 클램프
-- [ ] 단순화된 충돌 회피(겹치면 아래로 밀기) 프로토타입 → 여러 화자 패널로 육안 검증
-- [ ] 말풍선이 안 들어가면 텍스트 강제 분할 + 다음 패널로 이어붙임(`leftOver`)
-- [ ] `SpeechBubble`을 `Konva.Shape`의 `sceneFunc` 커스텀 경로(둥근 구름 테두리 + 꼬리)로 교체
+### 3단계 — 말풍선 랜덤화 + Konva 커스텀 모양 — 완료 (2026-07-19)
+- [x] `estimateBalloonSize()`(`packages/comic-engine/src/balloon/layout.ts`) — `GetCloudEstimate` 포팅: 텍스트 폭이 `ONELINETHRESHOLD`(500) 이하면 그 폭 그대로(+200 fudge factor는 항상 적용), 넘으면 `area/potentialHeight` 기반 minWidth~maxWidth 사이 랜덤폭. `AreaEstimate`/`WidestWord`는 `text/textMetrics.ts`의 문자폭 근사(`estimateTextWidth`/`estimateWidestWordWidth`)로 대체.
+- [x] X 위치 배치(원 체크리스트의 `positionBalloon`은 `estimateBalloonSize`에 통합) — arrowX를 항상 덮도록 `[arrowX-goalWidth, arrowX]` 범위에서 랜덤 배치 후 freeRect로 클램프. action(박스) 모드는 anchor 없이 freeRect 왼쪽 고정.
+- [x] `layoutPanelBalloons()` — 단순화된 충돌 회피: 각 말풍선을 이전 말풍선들이 끝난 지점부터 순서대로 쌓아 애초에 같은 세로 구간을 재사용하지 않는다("겹치면 밀어낸다"의 동치 구현, route-region 기하 미포팅은 스파이크 결과에 이미 명시). 브라우저 E2E로 실제 확인(아래).
+- [x] `splitTextToFit()`(`text/textMetrics.ts`) + `layoutPanelBalloons`의 `leftOver` 반환 — `CLabel::SplitHeight` 포팅: maxLines를 넘는 텍스트를 단어 경계에서 잘라 fitted/leftOver로 분리.
+- [x] `SpeechBubble`(`apps/web/src/components/SpeechBubble.tsx`)을 `Konva.Shape`의 `sceneFunc` 커스텀 경로(오돌토돌한 구름 테두리 + 꼬리)로 교체.
+- [x] `PanelCanvas`를 `HistoryEntry` 1:1 렌더링에서 `Panel`(다중 body+다중 balloon) 렌더링으로 재구성. `ChatRoom`이 클라이언트에서 직접 `foldEvents()`를 돌려(서버와 동일 로직 재사용, 프로토콜 변경 없음) 패널을 재구성. 아바타는 동일 폭 칸에 좌우 배치(정밀한 신장/줌 배치는 `zoom.ts` 실통합과 함께 후속 과제로 남김, 아래 "범위 밖" 참고).
+- [x] 브라우저 E2E로 실제 다화자 패널 확인: 새로고침 후 접속한 신규 세션에서 4~5명이 한 패널에 모인 실제 대화 로그가 그대로 재생됨을 확인 — 캐릭터들이 좌우로 정확히 배치되고(순서/flip 반영), 말풍선 5개가 서로 겹치지 않고 세로로 쌓이며, 한글 2줄 문장도 올바르게 줄바꿈됨을 스크린샷으로 확인. 콘솔 에러 없음.
+
+**재검증 중 발견해 고친 버그 2건**(Stage 3 착수 전 원본 재대조 + 실통합 중 발견):
+1. `zoom.ts`의 `BodyBox.top`/`.bottom`이 원작과 반대로 뒤바뀌어 있었다. 원작 `SetBBox(left,bottom,right,top)` 호출에서 `m_bbox.Top=top[i]`(키에 비례)·`m_bbox.Bottom=-unitHeight`(상수)인데 포팅 코드는 이 둘을 바꿔 넣고 있었다 — 지금까지 소비하는 렌더러가 없어 눈에 보이는 버그는 없었으나 그대로 뒀다면 Stage 3에서 캐릭터가 위아래로 뒤집혔을 것. 필드 계산을 원작 방향으로 정정하고 회귀 테스트 추가(`zoom.test.ts`).
+2. `fold.ts`가 `doGreedyOrdering`이 결정한 좌우 순서를 `panel.bodies` 배열에 반영하지 않고 있었다(flip만 패치, 배열 순서는 삽입 순서 그대로) — 렌더러가 배열 순서를 곧 화면 배치 순서로 쓰므로 실제 렌더링에서 순서가 어긋날 뻔했다. 4명이 순서대로 클론 합류하는 실제 시나리오로 재현(삽입순 `[a,b,c,d]` vs 실제 배치 `[d,c,a,b]`)해 회귀 테스트로 고정(`fold.test.ts`).
+
+**의도적으로 범위 밖으로 남긴 것**: 아바타 배치는 지금 "동일 폭 칸에 좌우 나열"하는 단순 배치이며, 1단계에서 만든 `zoom.ts`의 신장 정규화/줌 스냅/정밀 `arrowX`(`GetDimInfo` 포팅 포함)는 아직 실제 렌더러에 연결하지 않았다 — 실제 자산 크기(포즈별 width/height/headHeight)를 매니페스트에서 뽑아 `BodyDim`으로 매핑하는 작업이 필요해 별도 과제로 분리했다. 또한 말풍선이 패널 하나에 다 안 들어가는 경우(레이아웃 예산 초과) 원작처럼 "새 패널로 재시도"하지 않고 캔버스를 세로로 늘려 전부 보여주는 방식으로 단순화했다(`leftOver`가 있으면 "+N자 더" 표시만) — `foldEvents`가 실제 말풍선 크기를 알지 못해 클론-vs-새패널 결정에 반영할 수 없기 때문. 이 두 가지(정밀 아바타 배치, 말풍선 적합성 기반 패널 재시도)는 Stage 4 또는 별도 후속 과제로 남긴다.
+
+**사용자 피드백으로 발견·수정한 버그(2026-07-19)**: 실제로 채팅해보니 말풍선 크기가 내용 길이와 무관하게 거의 똑같아 보인다는 지적을 받았다. 원인은 `balloon/layout.ts`의 `DEFAULT_BALLOON_GEOMETRY`(`oneLineThreshold=500`, `widthFudge=200`, `minHookHeight=100`)가 원작의 ~2300-unit 패널 스케일에 맞춘 절대값인데, `PanelCanvas`는 그보다 훨씬 작은 스케일(`maxWidth≈284`)로 렌더링하면서 이 상수들을 그대로(스케일 조정 없이) 넘기고 있었던 것 — 특히 `widthFudge=200`이 `maxWidth`의 70%나 차지해 대부분의 짧은 메시지가 `len+200`으로 뭉개져 사실상 같은 폭에 클램프됐다. `PanelCanvas`에서 이 패널의 실제 폭 비율(원작 대비 약 0.13)로 스케일한 `geometry` 오버라이드(`oneLineThreshold=60`, `widthFudge=24`, `minHookHeight=12`, `padding=8`)를 `layoutPanelBalloons` 호출에 전달하도록 수정. 이 과정에서 처음엔 세로 예산(`BALLOON_AREA_BUDGET`)도 같은 비율로 줄였다가 5개 말풍선이 쌓이는 패널에서 뒤쪽 말풍선이 "+N자 더"로 잘리는 회귀를 만들었는데 — 짧은 텍스트 분기(`len<=oneLineThreshold`)는애초에 이 예산과 무관하고, 긴 텍스트 분기의 `minWidth`도 `estimateWidestWordWidth`로 바닥이 잡혀 있어 폭 균일화 버그와는 무관함을 재확인하고 예산은 넉넉한 값(700)으로 되돌렸다. 브라우저에서 길이가 다른 여러 메시지로 재확인해 폭이 뚜렷하게 달라지고 5개 말풍선 모두 잘리지 않고 표시됨을 확인.
 
 ### 4단계 — 시드 기반 재현성 + 전체 검증
 - [ ] 이벤트 payload에 랜덤 결정 결과(말풍선 폭/위치, 줌 값, 배치 순서/방향) 저장

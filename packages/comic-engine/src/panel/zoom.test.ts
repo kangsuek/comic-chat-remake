@@ -84,4 +84,16 @@ describe("layoutBodies - 최종 배치", () => {
     const box = result.boxes[0]!;
     expect(box.arrowX).toBe(box.left + Math.floor(0.25 * (box.right - box.left) + 0.5));
   });
+
+  it("bottom은 모든 몸이 공유하는 바닥(-unitHeight)이고, top은 그보다 크다(원작 SetBBox와 동일한 방향)", () => {
+    // panel.cpp: b->SetBBox(xOffset, top[i]-height[i], xOffset+width[i], top[i])
+    // → m_bbox.Bottom == top[i]-height[i] == -unitHeight(상수), m_bbox.Top == top[i](머리 쪽, 더 큰 값).
+    const dims: BodyDim[] = [singleBodyDim(200), singleBodyDim(150)];
+    const result = layoutBodies(dims, { ...baseInput, unitWidth: 1000, zoomIn: false });
+
+    for (const box of result.boxes) {
+      expect(box.bottom).toBe(-baseInput.unitHeight);
+      expect(box.top).toBeGreaterThan(box.bottom);
+    }
+  });
 });

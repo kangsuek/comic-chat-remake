@@ -56,6 +56,17 @@ describe("foldEvents", () => {
     expect(result.panels[1]!.balloons[0]!.mode).toBe("action");
   });
 
+  it("panel.bodies 배열 순서는 삽입 순서가 아니라 그리디 배치가 결정한 좌우 순서를 따른다", () => {
+    // a,b,c,d가 순서대로(삽입 순서 a,b,c,d) 한 패널에 클론으로 합류하지만, 그리디 배치는
+    // 히스테리시스에 따라 다른 좌우 순서를 고를 수 있다 — 배열도 그 순서를 반영해야 렌더러가
+    // 배열 순서를 곧 화면 배치 순서로 쓸 수 있다(placement.ts는 이미 Stage 1에서 별도 검증됨).
+    const result = foldEvents([say("a", "1"), say("a", "2"), say("b", "3"), say("c", "4"), say("d", "5")]);
+    const lastPanel = result.panels.at(-1)!;
+
+    expect(lastPanel.bodies.map((b) => b.actorId)).not.toEqual(["a", "b", "c", "d"]); // 삽입 순서와 다름을 확인
+    expect(lastPanel.bodies.map((b) => b.actorId)).toEqual(["d", "c", "a", "b"]); // doGreedyOrdering이 실제로 계산한 순서
+  });
+
   it("previous를 넘겨 이어서 fold하면 한 번에 fold한 것과 동일한 결과가 나온다(증분 fold)", () => {
     const events = [say("alice", "1"), say("alice", "2"), say("bob", "3"), say("carol", "4")];
 

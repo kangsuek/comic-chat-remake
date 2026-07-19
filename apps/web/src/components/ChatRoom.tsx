@@ -1,4 +1,6 @@
-import { useState } from "react";
+import { foldEvents, type SayEvent } from "@comic-chat/comic-engine";
+import type { HistoryEntry } from "@comic-chat/protocol";
+import { useMemo, useState } from "react";
 import type { AssetCatalogState } from "../useAssetCatalog";
 import { useLocalEmotionPreview } from "../useLocalEmotionPreview";
 import type { RoomConnection } from "../useRoomConnection";
@@ -10,10 +12,23 @@ interface ChatRoomProps {
   catalogState: AssetCatalogState;
 }
 
+function toSayEvent(entry: HistoryEntry): SayEvent {
+  return { actorId: entry.actorId, characterId: entry.characterId, mode: entry.type, text: entry.text, pose: entry.pose };
+}
+
 export function ChatRoom({ nick, connection, catalogState }: ChatRoomProps) {
   const [draft, setDraft] = useState("");
   // 서버 왕복 없이 타이핑 즉시 반응하는 로컬 감정 미리보기(원작 ChatPreSendText의 재현).
   const preview = useLocalEmotionPreview(draft);
+
+  // 클라이언트도 서버(Room)와 동일한 foldEvents()를 그대로 돌려 패널 구조를 재구성한다
+  // (plan.md: 서버/클라가 같은 워크스페이스 링크로 동일 로직을 공유 — 이원화 방지).
+  const fold = useMemo(() => foldEvents(connection.entries.map(toSayEvent)), [connection.entries]);
+  const actorNicks = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const entry of connection.entries) map.set(entry.actorId, entry.nick);
+    return map;
+  }, [connection.entries]);
 
   return (
     <div>
@@ -27,13 +42,11 @@ export function ChatRoom({ nick, connection, catalogState }: ChatRoomProps) {
       </aside>
       <main>
         <div style={{ display: "flex", flexWrap: "wrap", gap: "8px" }}>
-          {connection.entries.map((entry, i) =>
+          {fold.panels.map((panel, i) =>
             catalogState.status === "ready" ? (
-              <PanelCanvas key={`${entry.actorId}-${entry.ts}-${i}`} entry={entry} catalog={catalogState.catalog} />
+              <PanelCanvas key={i} panel={panel} actorNicks={actorNicks} catalog={catalogState.catalog} />
             ) : (
-              <p key={`${entry.actorId}-${entry.ts}-${i}`}>
-                <strong>{entry.nick}:</strong> {entry.text}
-              </p>
+              <p key={i}>{panel.balloons.map((b) => `${actorNicks.get(b.speakerActorId) ?? "?"}: ${b.text}`).join(" / ")}</p>
             ),
           )}
         </div>
