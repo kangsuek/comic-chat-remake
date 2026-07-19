@@ -50,13 +50,14 @@ describe("Room", () => {
     room = new Room(testCatalog, new EventStore(":memory:"), "test-room");
   });
 
-  it("join 시 history(빈 배열)와 memberList가 순서대로 브로드캐스트된다", () => {
+  it("join 시 joined→history(빈 배열)→memberList가 순서대로 브로드캐스트된다", () => {
     const alice = collector();
-    room.join("Alice", "mike-test", alice.send);
+    const client = room.join("Alice", "mike-test", alice.send);
 
-    expect(alice.messages).toHaveLength(2);
-    expect(alice.messages[0]).toEqual({ type: "history", entries: [] });
-    expect(alice.messages[1]).toMatchObject({
+    expect(alice.messages).toHaveLength(3);
+    expect(alice.messages[0]).toEqual({ type: "joined", actorId: client!.actorId });
+    expect(alice.messages[1]).toEqual({ type: "history", entries: [] });
+    expect(alice.messages[2]).toMatchObject({
       type: "memberList",
       members: [{ nick: "Alice", characterId: "mike-test" }],
     });
@@ -109,6 +110,52 @@ describe("Room", () => {
     });
   });
 
+  it("mode를 생략하면 say로 기록된다", () => {
+    const alice = collector();
+    const aliceClient = room.join("Alice", "mike-test", alice.send);
+    room.say(aliceClient!.actorId, "hi");
+    expect(alice.messages.at(-1)).toMatchObject({ type: "historyEntry", entry: { mode: "say" } });
+  });
+
+  it("think/shout/action 모드로 발화하면 그 모드로 기록되고 전원에게 브로드캐스트된다", () => {
+    const alice = collector();
+    const aliceClient = room.join("Alice", "mike-test", alice.send);
+    const bob = collector();
+    room.join("Bob", "tux-test", bob.send);
+
+    for (const mode of ["think", "shout", "action"] as const) {
+      room.say(aliceClient!.actorId, `${mode} text`, mode);
+      expect(alice.messages.at(-1)).toMatchObject({ type: "historyEntry", entry: { mode } });
+      expect(bob.messages.at(-1)).toMatchObject({ type: "historyEntry", entry: { mode } });
+    }
+  });
+
+  it("whisper는 발신자와 대상에게만 브로드캐스트되고, 제3자는 받지 못한다", () => {
+    const alice = collector();
+    const aliceClient = room.join("Alice", "mike-test", alice.send);
+    const bob = collector();
+    const bobClient = room.join("Bob", "tux-test", bob.send);
+    const carol = collector();
+    room.join("Carol", "mike-test", carol.send);
+
+    alice.messages.length = 0;
+    bob.messages.length = 0;
+    carol.messages.length = 0;
+
+    room.say(aliceClient!.actorId, "psst", "whisper", bobClient!.actorId);
+
+    expect(alice.messages).toHaveLength(1);
+    expect(alice.messages[0]).toMatchObject({ type: "historyEntry", entry: { mode: "whisper", text: "psst", targetActorId: bobClient!.actorId } });
+    expect(bob.messages).toHaveLength(1);
+    expect(bob.messages[0]).toEqual(alice.messages[0]);
+    expect(carol.messages).toHaveLength(0); // 제3자는 받지 못함
+  });
+
+  it("whisper인데 targetActorId가 없으면 무시된다(null 반환)", () => {
+    const aliceClient = room.join("Alice", "mike-test", () => {});
+    expect(room.say(aliceClient!.actorId, "psst", "whisper")).toBeNull();
+  });
+
   it("simple 아바타는 pose.kind가 simple이다", () => {
     const bob = collector();
     const bobClient = room.join("Bob", "tux-test", bob.send);
@@ -149,6 +196,32 @@ describe("Room", () => {
     });
   });
 
+  it("whisper 이후 입장한 제3자는 history에서 그 whisper를 못 본다(같은 세션 내 대상 본인은 봄)", () => {
+    const alice = collector();
+    const aliceClient = room.join("Alice", "mike-test", alice.send);
+    const bob = collector();
+    const bobClient = room.join("Bob", "tux-test", bob.send);
+
+    room.say(aliceClient!.actorId, "public hello", "say");
+    room.say(aliceClient!.actorId, "secret", "whisper", bobClient!.actorId);
+
+    const carol = collector();
+    room.join("Carol", "mike-test", carol.send);
+    const carolHistory = carol.messages.find((m) => m.type === "history");
+    expect(carolHistory?.type === "history" && carolHistory.entries.map((e) => e.text)).toEqual(["public hello"]);
+
+    // 알려진 한계: actorId는 접속(join)마다 새로 발급되는 randomUUID라 영속적 사용자 식별자가
+    // 아니다(Phase 2/3에서 이미 확인된 설계) — Bob이 재접속하면 새 actorId를 받으므로 예전
+    // targetActorId와 더 이상 일치하지 않아, 자기가 받았던 whisper라도 재접속 후에는 history에서
+    // 사라진다. 영속 계정/식별자가 생기기 전까지는 감수해야 하는 트레이드오프다.
+    const bobAgain = collector();
+    room.join("Bob", "tux-test", bobAgain.send);
+    const bobHistoryAfterReconnect = bobAgain.messages.find((m) => m.type === "history");
+    expect(bobHistoryAfterReconnect?.type === "history" && bobHistoryAfterReconnect.entries.map((e) => e.text)).toEqual([
+      "public hello",
+    ]);
+  });
+
   it("나중에 입장한 사람도 join 시 이전 대화 전체를 history로 받는다(재접속 replay)", () => {
     const alice = collector();
     const aliceClient = room.join("Alice", "mike-test", alice.send);
@@ -158,7 +231,7 @@ describe("Room", () => {
     const bob = collector();
     room.join("Bob", "tux-test", bob.send);
 
-    const historyMsg = bob.messages[0];
+    const historyMsg = bob.messages.find((m) => m.type === "history");
     expect(historyMsg?.type).toBe("history");
     expect(historyMsg?.type === "history" && historyMsg.entries.map((e) => e.text)).toEqual(["first", "second"]);
   });
@@ -173,7 +246,7 @@ describe("Room", () => {
     const bob = collector();
     after.join("Bob", "tux-test", bob.send);
 
-    const historyMsg = bob.messages[0];
+    const historyMsg = bob.messages.find((m) => m.type === "history");
     expect(historyMsg?.type === "history" && historyMsg.entries).toMatchObject([
       { text: "SO GREAT!!!", emotion: { emotion: "SHOUT" } },
     ]);
@@ -200,6 +273,7 @@ describe("Room", () => {
     const sharedStore = new EventStore(":memory:");
     const e1: HistoryEntry = {
       type: "say",
+      mode: "say",
       actorId: "alice",
       nick: "Alice",
       text: "first",

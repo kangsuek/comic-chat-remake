@@ -63,6 +63,7 @@ export function PanelCanvas({ panel, actorNicks, catalog }: PanelCanvasProps) {
               tailX={spec.arrowX - p.left}
               text={p.text}
               fontSize={FONT_SIZE}
+              mode={spec.mode}
             />
           );
         })}

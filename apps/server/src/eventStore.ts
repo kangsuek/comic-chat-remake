@@ -80,11 +80,27 @@ export class EventStore {
     return seq;
   }
 
+  /**
+   * room의 전체 이벤트를 필터 없이 돌려준다 — whisper도 포함된 "신 관점" 원문. 서버 내부
+   * 상태(this.fold) 복구 전용이며, 클라이언트에게 그대로 보내면 안 된다(다른 사람의 귓속말이
+   * 새는 것과 같다). 클라이언트로 보낼 때는 반드시 loadVisibleTo를 쓴다.
+   */
   loadAll(roomId: string): HistoryEntry[] {
     const rows = this.db
       .prepare(`SELECT payload_json FROM events WHERE room_id = ? ORDER BY seq ASC`)
       .all(roomId) as EventRow[];
     return rows.map((row) => JSON.parse(row.payload_json) as HistoryEntry);
+  }
+
+  /**
+   * 특정 사용자(viewerActorId)에게 보여줘도 되는 이벤트만 돌려준다 — whisper는 발신자·수신자만
+   * 볼 수 있고, 그 외 모드는 전부 공개다. join 시 history 재생, 즉 클라이언트가 실제로 받는
+   * 데이터를 만들 때는 항상 이 메서드를 써야 한다.
+   */
+  loadVisibleTo(roomId: string, viewerActorId: string): HistoryEntry[] {
+    return this.loadAll(roomId).filter(
+      (entry) => entry.mode !== "whisper" || entry.actorId === viewerActorId || entry.targetActorId === viewerActorId,
+    );
   }
 
   /** sinceSeq보다 큰 이벤트만 seq와 함께 돌려준다 — 스냅샷 이후분만 재fold할 때 쓴다. */

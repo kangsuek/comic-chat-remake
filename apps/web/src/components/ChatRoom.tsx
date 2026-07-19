@@ -1,4 +1,4 @@
-import { foldEvents, type SayEvent } from "@comic-chat/comic-engine";
+import { foldEvents, type SayEvent, type SpeechMode } from "@comic-chat/comic-engine";
 import type { HistoryEntry } from "@comic-chat/protocol";
 import { useMemo, useState } from "react";
 import type { AssetCatalogState } from "../useAssetCatalog";
@@ -13,11 +13,23 @@ interface ChatRoomProps {
 }
 
 function toSayEvent(entry: HistoryEntry): SayEvent {
-  return { actorId: entry.actorId, characterId: entry.characterId, mode: entry.type, text: entry.text, pose: entry.pose };
+  return { actorId: entry.actorId, characterId: entry.characterId, mode: entry.mode, text: entry.text, pose: entry.pose };
 }
+
+// shout은 원작에서 별도 말풍선 스타일이 없다(panel.cpp의 MakeBalloon이 SM_SHOUT 분기를
+// 구현하지 않음 — SpeechBubble.tsx 주석 참고) — 텍스트를 대문자로 치면 AllCaps 규칙이 알아서
+// SHOUT 감정을 인식해 표정으로 드러나므로, 이 선택지에는 넣지 않는다.
+const MODE_OPTIONS: { value: SpeechMode; label: string }[] = [
+  { value: "say", label: "말하기" },
+  { value: "think", label: "생각하기" },
+  { value: "whisper", label: "귓속말" },
+  { value: "action", label: "액션" },
+];
 
 export function ChatRoom({ nick, connection, catalogState }: ChatRoomProps) {
   const [draft, setDraft] = useState("");
+  const [mode, setMode] = useState<SpeechMode>("say");
+  const [whisperTarget, setWhisperTarget] = useState("");
   // 서버 왕복 없이 타이핑 즉시 반응하는 로컬 감정 미리보기(원작 ChatPreSendText의 재현).
   const preview = useLocalEmotionPreview(draft);
 
@@ -29,6 +41,9 @@ export function ChatRoom({ nick, connection, catalogState }: ChatRoomProps) {
     for (const entry of connection.entries) map.set(entry.actorId, entry.nick);
     return map;
   }, [connection.entries]);
+
+  const whisperCandidates = connection.members.filter((m) => m.actorId !== connection.selfActorId);
+  const canSubmit = draft.trim().length > 0 && (mode !== "whisper" || whisperTarget !== "");
 
   return (
     <div>
@@ -54,18 +69,36 @@ export function ChatRoom({ nick, connection, catalogState }: ChatRoomProps) {
           onSubmit={(e) => {
             e.preventDefault();
             const trimmed = draft.trim();
-            if (trimmed) {
-              connection.say(trimmed);
-              setDraft("");
-            }
+            if (!trimmed || !canSubmit) return;
+            connection.say(trimmed, mode, mode === "whisper" ? whisperTarget : undefined);
+            setDraft("");
           }}
         >
+          <select value={mode} onChange={(e) => setMode(e.target.value as SpeechMode)}>
+            {MODE_OPTIONS.map((opt) => (
+              <option key={opt.value} value={opt.value}>
+                {opt.label}
+              </option>
+            ))}
+          </select>
+          {mode === "whisper" && (
+            <select value={whisperTarget} onChange={(e) => setWhisperTarget(e.target.value)}>
+              <option value="">대상 선택...</option>
+              {whisperCandidates.map((m) => (
+                <option key={m.actorId} value={m.actorId}>
+                  {m.nick}
+                </option>
+              ))}
+            </select>
+          )}
           <input
             value={draft}
             onChange={(e) => setDraft(e.target.value)}
             placeholder={`${nick}로 말하기...`}
           />
-          <button type="submit">보내기</button>
+          <button type="submit" disabled={!canSubmit}>
+            보내기
+          </button>
           {preview && (
             <span>
               {" "}

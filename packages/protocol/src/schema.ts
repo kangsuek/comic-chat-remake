@@ -1,8 +1,13 @@
-import { ALL_EMOTION_IDS } from "@comic-chat/comic-engine";
+import { ALL_EMOTION_IDS, ALL_SPEECH_MODES, type EmotionId, type SpeechMode } from "@comic-chat/comic-engine";
 import { z } from "zod";
 
 // comic-engine의 EmotionId를 zod enum으로 재사용(타입과 값 목록이 어긋나지 않게 함).
-const emotionIdSchema = z.enum(ALL_EMOTION_IDS as [string, ...string[]]);
+// 리터럴 유니온으로 캐스팅해야 z.infer 결과가 EmotionId 그대로 좁혀진다(그냥 string[]으로
+// 캐스팅하면 타입이 string으로 넓어져, 이 값을 EmotionId를 요구하는 자리에 못 넘긴다).
+const emotionIdSchema = z.enum(ALL_EMOTION_IDS as [EmotionId, ...EmotionId[]]);
+
+// comic-engine의 SpeechMode(say/think/whisper/shout/action)를 그대로 재사용.
+const speechModeSchema = z.enum(ALL_SPEECH_MODES as [SpeechMode, ...SpeechMode[]]);
 
 // comic-engine의 EmotionCandidate와 대응. resolveEmotion()의 primary 후보가 없으면 null.
 export const emotionCandidateSchema = z
@@ -29,25 +34,38 @@ const joinActionSchema = z.object({
   characterId: z.string().min(1),
 });
 
+// mode 생략 시 "say"로 취급(Phase 1~3 클라이언트와의 최소 호환). whisper는 targetActorId가
+// 반드시 있어야 하는데, discriminatedUnion 멤버는 ZodEffects(.refine())를 못 받으므로 이 검증은
+// clientActionSchema 전체에 얹는다(아래).
 const sayActionSchema = z.object({
   type: z.literal("say"),
   text: z.string().min(1).max(2000),
+  mode: speechModeSchema.default("say"),
+  /** whisper일 때만 필요 — 그 외 모드에서는 무시된다. */
+  targetActorId: z.string().min(1).optional(),
 });
 
-export const clientActionSchema = z.discriminatedUnion("type", [joinActionSchema, sayActionSchema]);
+export const clientActionSchema = z
+  .discriminatedUnion("type", [joinActionSchema, sayActionSchema])
+  .refine((action) => action.type !== "say" || action.mode !== "whisper" || action.targetActorId !== undefined, {
+    message: "whisper requires targetActorId",
+    path: ["targetActorId"],
+  });
 export type ClientAction = z.infer<typeof clientActionSchema>;
 
 // ---- 서버 → 클라이언트 브로드캐스트 ----
 
-// Phase 1은 "say" 한 종류만 다룬다. think/whisper/shout/action은 Phase 4에서 추가된다.
 const sayHistoryEntrySchema = z.object({
   type: z.literal("say"),
+  mode: speechModeSchema,
   actorId: z.string(),
   nick: z.string(),
   text: z.string(),
   emotion: emotionCandidateSchema,
   characterId: z.string(),
   pose: poseSelectionSchema,
+  /** whisper일 때만 채워진다(발화모드 UI 표시 및 "OO님이 XX에게 귓속말" 문구용). */
+  targetActorId: z.string().optional(),
   ts: z.number(),
 });
 
@@ -78,7 +96,16 @@ const memberListMessageSchema = z.object({
   members: z.array(memberSchema),
 });
 
+// join 성공 시 그 클라이언트에게만 한 번 보낸다 — 서버가 발급한 자기 actorId를 알려준다(예:
+// 클라이언트가 memberList에서 "이 중 어떤 게 나인지" 닉네임만으로 추측할 필요가 없어짐,
+// whisper 대상 목록에서 자기 자신을 제외할 때도 필요).
+const joinedMessageSchema = z.object({
+  type: z.literal("joined"),
+  actorId: z.string(),
+});
+
 export const serverMessageSchema = z.discriminatedUnion("type", [
+  joinedMessageSchema,
   historyEntryMessageSchema,
   historyMessageSchema,
   memberListMessageSchema,

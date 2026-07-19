@@ -2,9 +2,10 @@ import type { HistoryEntry } from "@comic-chat/protocol";
 import { beforeEach, describe, expect, it } from "vitest";
 import { EventStore } from "./eventStore.js";
 
-function entry(actorId: string, text: string, ts: number): HistoryEntry {
+function entry(actorId: string, text: string, ts: number, overrides: Partial<HistoryEntry> = {}): HistoryEntry {
   return {
     type: "say",
+    mode: "say",
     actorId,
     nick: actorId,
     text,
@@ -12,6 +13,7 @@ function entry(actorId: string, text: string, ts: number): HistoryEntry {
     characterId: "mike",
     pose: { kind: "simple", bodyIndex: 0 },
     ts,
+    ...overrides,
   };
 }
 
@@ -75,5 +77,29 @@ describe("EventStore", () => {
     const stateB = { panels: [], hysteresis: { alice: { lastDir: true, lastRight: null, lastLeft: null } } };
     store.saveSnapshot("lobby", 5, stateB);
     expect(store.loadSnapshot("lobby")).toEqual({ seq: 5, state: stateB });
+  });
+
+  describe("loadVisibleTo", () => {
+    it("whisper가 아닌 이벤트는 모두에게 보인다", () => {
+      store.append("lobby", entry("alice", "hi everyone", 100));
+      expect(store.loadVisibleTo("lobby", "carol").map((e) => e.text)).toEqual(["hi everyone"]);
+    });
+
+    it("whisper는 발신자와 targetActorId 본인에게만 보인다", () => {
+      store.append("lobby", entry("alice", "psst", 100, { mode: "whisper", targetActorId: "bob" }));
+
+      expect(store.loadVisibleTo("lobby", "alice").map((e) => e.text)).toEqual(["psst"]); // 발신자
+      expect(store.loadVisibleTo("lobby", "bob").map((e) => e.text)).toEqual(["psst"]); // 수신자
+      expect(store.loadVisibleTo("lobby", "carol").map((e) => e.text)).toEqual([]); // 제3자에게는 안 보임
+    });
+
+    it("일반 발화와 whisper가 섞여 있으면 whisper만 골라 걸러낸다", () => {
+      store.append("lobby", entry("alice", "public 1", 100));
+      store.append("lobby", entry("alice", "secret", 200, { mode: "whisper", targetActorId: "bob" }));
+      store.append("lobby", entry("bob", "public 2", 300));
+
+      expect(store.loadVisibleTo("lobby", "carol").map((e) => e.text)).toEqual(["public 1", "public 2"]);
+      expect(store.loadVisibleTo("lobby", "bob").map((e) => e.text)).toEqual(["public 1", "secret", "public 2"]);
+    });
   });
 });

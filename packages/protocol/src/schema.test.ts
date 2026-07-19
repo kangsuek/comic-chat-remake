@@ -7,9 +7,27 @@ describe("clientActionSchema", () => {
     expect(result.success).toBe(true);
   });
 
-  it("say 액션을 허용한다", () => {
+  it("say 액션을 허용한다(mode 생략 시 say로 취급)", () => {
     const result = clientActionSchema.safeParse({ type: "say", text: "Hello!" });
     expect(result.success).toBe(true);
+    if (result.success && result.data.type === "say") expect(result.data.mode).toBe("say");
+  });
+
+  it("think/shout/action 모드를 허용한다", () => {
+    for (const mode of ["think", "shout", "action"]) {
+      expect(clientActionSchema.safeParse({ type: "say", text: "hi", mode }).success).toBe(true);
+    }
+  });
+
+  it("whisper는 targetActorId가 있어야 허용된다", () => {
+    expect(clientActionSchema.safeParse({ type: "say", text: "hi", mode: "whisper" }).success).toBe(false);
+    expect(
+      clientActionSchema.safeParse({ type: "say", text: "hi", mode: "whisper", targetActorId: "actor-2" }).success,
+    ).toBe(true);
+  });
+
+  it("알 수 없는 mode는 거부한다", () => {
+    expect(clientActionSchema.safeParse({ type: "say", text: "hi", mode: "yell" }).success).toBe(false);
   });
 
   it("빈 닉네임/텍스트/캐릭터ID는 거부한다", () => {
@@ -30,6 +48,7 @@ describe("serverMessageSchema", () => {
       type: "historyEntry",
       entry: {
         type: "say",
+        mode: "say",
         actorId: "actor-1",
         nick: "Alice",
         text: "SO GREAT!!!",
@@ -47,6 +66,7 @@ describe("serverMessageSchema", () => {
       type: "historyEntry",
       entry: {
         type: "say",
+        mode: "say",
         actorId: "actor-1",
         nick: "Bob",
         text: "hi",
@@ -64,6 +84,7 @@ describe("serverMessageSchema", () => {
       type: "historyEntry",
       entry: {
         type: "say",
+        mode: "say",
         actorId: "actor-1",
         nick: "Alice",
         text: "just a plain sentence",
@@ -76,6 +97,42 @@ describe("serverMessageSchema", () => {
     expect(result.success).toBe(true);
   });
 
+  it("whisper historyEntry는 targetActorId를 포함할 수 있다", () => {
+    const result = serverMessageSchema.safeParse({
+      type: "historyEntry",
+      entry: {
+        type: "say",
+        mode: "whisper",
+        actorId: "actor-1",
+        nick: "Alice",
+        text: "psst",
+        emotion: null,
+        characterId: "mike",
+        pose: { kind: "simple", bodyIndex: 0 },
+        targetActorId: "actor-2",
+        ts: 1234567890,
+      },
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it("mode가 없는 historyEntry는 거부한다", () => {
+    const result = serverMessageSchema.safeParse({
+      type: "historyEntry",
+      entry: {
+        type: "say",
+        actorId: "actor-1",
+        nick: "Alice",
+        text: "hi",
+        emotion: null,
+        characterId: "mike",
+        pose: { kind: "simple", bodyIndex: 0 },
+        ts: 1234567890,
+      },
+    });
+    expect(result.success).toBe(false);
+  });
+
   it("history 메시지(빈 배열 포함)를 허용한다", () => {
     expect(serverMessageSchema.safeParse({ type: "history", entries: [] }).success).toBe(true);
 
@@ -84,6 +141,7 @@ describe("serverMessageSchema", () => {
       entries: [
         {
           type: "say",
+          mode: "say",
           actorId: "actor-1",
           nick: "Alice",
           text: "hi",
@@ -95,6 +153,10 @@ describe("serverMessageSchema", () => {
       ],
     });
     expect(result.success).toBe(true);
+  });
+
+  it("joined 메시지를 허용한다", () => {
+    expect(serverMessageSchema.safeParse({ type: "joined", actorId: "actor-1" }).success).toBe(true);
   });
 
   it("memberList 메시지를 허용한다", () => {
@@ -110,6 +172,7 @@ describe("serverMessageSchema", () => {
       type: "historyEntry",
       entry: {
         type: "say",
+        mode: "say",
         actorId: "actor-1",
         nick: "Alice",
         text: "hi",
@@ -127,6 +190,7 @@ describe("serverMessageSchema", () => {
       type: "historyEntry",
       entry: {
         type: "say",
+        mode: "say",
         actorId: "actor-1",
         nick: "Alice",
         text: "hi",

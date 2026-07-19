@@ -3,6 +3,8 @@
 // 재연결해야 했다(panel.cpp의 ReplaceBody 주석 "must be done *after*..." 참고). 여기서는
 // actorId(문자열)로 참조해 그 문제 자체가 없다 — structuredClone으로 깊은 복사하면 끝.
 export type SpeechMode = "say" | "think" | "whisper" | "shout" | "action";
+/** SpeechMode 전체 목록 — packages/protocol이 zod enum을 만들 때 타입과 값이 어긋나지 않게 재사용한다. */
+export const ALL_SPEECH_MODES: readonly SpeechMode[] = ["say", "think", "whisper", "shout", "action"];
 
 export type PoseSelection =
   | { kind: "complex"; faceIndex: number; torsoIndex: number }

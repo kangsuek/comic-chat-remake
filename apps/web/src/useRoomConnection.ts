@@ -1,3 +1,4 @@
+import type { SpeechMode } from "@comic-chat/comic-engine";
 import {
   clientActionSchema,
   serverMessageSchema,
@@ -13,8 +14,10 @@ export interface RoomConnection {
   status: ConnectionStatus;
   members: Member[];
   entries: HistoryEntry[];
+  /** 서버가 발급한 내 actorId — join 성공 시 "joined" 메시지로 받는다. join 전에는 null. */
+  selfActorId: string | null;
   join: (nick: string, characterId: string) => void;
-  say: (text: string) => void;
+  say: (text: string, mode?: SpeechMode, targetActorId?: string) => void;
 }
 
 /** WS 연결을 유지하며 서버 브로드캐스트(historyEntry/memberList)로 상태를 갱신하는 훅. */
@@ -23,11 +26,13 @@ export function useRoomConnection(url: string): RoomConnection {
   const [status, setStatus] = useState<ConnectionStatus>("connecting");
   const [members, setMembers] = useState<Member[]>([]);
   const [entries, setEntries] = useState<HistoryEntry[]>([]);
+  const [selfActorId, setSelfActorId] = useState<string | null>(null);
 
   useEffect(() => {
     setStatus("connecting");
     setMembers([]);
     setEntries([]);
+    setSelfActorId(null);
 
     const ws = new WebSocket(url);
     wsRef.current = ws;
@@ -45,7 +50,9 @@ export function useRoomConnection(url: string): RoomConnection {
       if (!result.success) return;
 
       const message = result.data;
-      if (message.type === "memberList") {
+      if (message.type === "joined") {
+        setSelfActorId(message.actorId);
+      } else if (message.type === "memberList") {
         setMembers(message.members);
       } else if (message.type === "history") {
         // join 직후 한 번, SQLite에 영속화된 이전 대화 전체를 재생해준다(새로고침해도 유지).
@@ -72,7 +79,11 @@ export function useRoomConnection(url: string): RoomConnection {
     (nick: string, characterId: string) => sendAction({ type: "join", nick, characterId }),
     [sendAction],
   );
-  const say = useCallback((text: string) => sendAction({ type: "say", text }), [sendAction]);
+  const say = useCallback(
+    (text: string, mode: SpeechMode = "say", targetActorId?: string) =>
+      sendAction({ type: "say", text, mode, targetActorId }),
+    [sendAction],
+  );
 
-  return { status, members, entries, join, say };
+  return { status, members, entries, selfActorId, join, say };
 }
