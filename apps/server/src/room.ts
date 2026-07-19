@@ -157,10 +157,19 @@ export class Room {
   }
 
   /**
-   * avatar.cpp의 GetBodyFromEmotion(CEmotionOpts&) 포팅 지점. 매칭 후 라운드로빈 상태를
-   * 갱신한다 — 원작은 이 갱신을 패널에 실제 배치가 확정될 때(RecordBody, panel.cpp) 하지만
-   * Phase 2는 패널 배치가 없으므로 "메시지 하나 = 확정"으로 간주해 매번 갱신한다
-   * (Phase 3에서 패널 클론/백트래킹이 들어오면 재검토).
+   * avatar.cpp의 GetBodyFromEmotion(CEmotionOpts&) 포팅 지점. 매칭 직후 즉시 라운드로빈
+   * 상태를 갱신한다 — 원작은 이 갱신을 패널 배치 확정 시점(RecordBody, panel.cpp의
+   * FetchSpeaker/ReplaceBody)에 하지만, Phase 3 완료 후 panel.cpp의 AddLine을 재대조해
+   * 두 시점이 항상 동치임을 확인했다: AddLine은 새 패널/클론 패널을 만들 때
+   * `oldP->AvatarInPanel(id)`가 참이면 반드시 새 패널을 시작하므로, 현재 화자 id는
+   * FetchSpeaker(newP) 시점에 newP->m_bodies에 결코 이미 존재할 수 없다 — 즉 FetchSpeaker의
+   * "이미 있음" 조기 반환(=RecordBody 미호출) 분기는 현재 줄의 화자에 대해서는 절대
+   * 일어나지 않는다. 뒤이은 ReplaceBody(id) 호출도 같은 av->m_body를 다시 클론해
+   * RecordBody를 한 번 더(동일 인덱스로, 멱등) 호출할 뿐이다. 레이아웃 실패로
+   * StartNewPanel()+AddLine() 재귀 재시도가 일어나도 av->m_body가 그사이 바뀌지 않으므로
+   * 결과는 동일하다. 따라서 "메시지 하나 = 매칭 즉시 확정"으로 매번 갱신하는 이 구현은
+   * 원작과 항상 같은 순서를 관찰한다(2026-07-19 재검증, 이전엔 "Phase 3 이후 재검토
+   * 필요"로 남겨뒀던 항목).
    */
   private matchPose(avatar: AvatarManifest, candidates: readonly EmotionCandidate[], poseState: PoseState): PoseSelection {
     if (avatar.kind === "complex") {
