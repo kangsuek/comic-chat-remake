@@ -11,7 +11,7 @@
 | [Phase 1 — 텍스트 채팅 MVP](docs/phases/01-text-chat-mvp.md) | ✅ 완료 | 2026-07-18 | 2026-07-18 | 감정 라벨 붙는 WS 텍스트 챗봇 + 타이핑 중 로컬 감정 미리보기, E2E 검증 완료 |
 | [Phase 2 — 정적 아바타 렌더링](docs/phases/02-static-avatar-rendering.md) | ✅ 완료 | 2026-07-18 | 2026-07-18 | 22종 변환, Konva 렌더링, 캐릭터 선택 UI까지 E2E 검증 완료 |
 | [Phase 3 — 완전 자동 레이아웃](docs/phases/03-full-auto-layout.md) | ✅ 완료 | 2026-07-18 | 2026-07-19 | 4단계 전부 완료. talkTo 기반 캐릭터 회전만 프로토콜 미비로 Phase 4로 명시적 이연 |
-| [Phase 4 — 전체 프로토콜 + 멀티룸](docs/phases/04-full-protocol-multiroom.md) | 🟨 진행 중 | 2026-07-19 | | 1단계(발화모드 전체) 완료, 2단계(닉네임 관리) 착수 전 |
+| [Phase 4 — 전체 프로토콜 + 멀티룸](docs/phases/04-full-protocol-multiroom.md) | 🟨 진행 중 | 2026-07-19 | | 1단계(발화모드)·2단계(닉네임 관리) 완료, 3단계(낙관적 업데이트) 착수 전 |
 | [Phase 5 — AI 캐릭터](docs/phases/05-ai-character.md) | ⬜ 시작 전 | | | |
 | [Phase 6 — Tauri 빌드 + 마무리](docs/phases/06-tauri-packaging.md) | ⬜ 시작 전 | | | |
 
@@ -19,6 +19,7 @@
 
 <!-- 새 항목은 이 줄 바로 아래에 추가 (최신이 위로) -->
 
+- **2026-07-19** — Phase 4 2단계(회원/닉네임 관리) 완료. `irc.cpp` 조사로 원작 동작 확정: 닉네임 중복은 IRC `433` 거부+재입력 방식(자동 접미사 아님), 닉네임 변경(`NICK`/`ProcessNick`)은 멤버 목록만 갱신하고 만화 패널에는 전혀 반영되지 않음(원작에 "이름 바꿈" 시스템 메시지 자체가 없음) — 그래서 `changeNick`도 EventStore에 기록하지 않고 memberList 재브로드캐스트로만 구현. 프로토콜에 `changeNick` 액션 + `joinRejected`/`changeNickRejected` 메시지 추가. `Room.join()`에 대소문자 무관 닉네임 중복 검사 추가(기존에 characterId 오류 시 조용히 무시하던 기존 결함도 함께 고침 — 이제 항상 거부 사유를 통지). `App.tsx`가 join 확정 전까지 재시도 화면에 머물도록 수정, `ChatRoom`에 닉네임 변경 UI + 참여자 아바타 아이콘 추가. 단위 테스트 8개 추가(전체 211개), 브라우저 2세션 E2E로 중복 거부/정상 변경/실시간 반영/패널 무흔적 전부 확인. 워크스페이스 전체 typecheck/lint/test 클린.
 - **2026-07-19** — 사용자 요청으로 Phase 1~4 전체를 처음부터 순서대로 원본 소스와 재대조(그리디 배치/줌 외 나머지 전 영역). 결과:
   - **Phase 1(규칙엔진)**: `chat.rc` STRINGTABLE 9개 규칙 전부 정확 일치, `checkWord`/`findString`/`checkStart`/`checkAllCaps`/`getSentenceStarts`/우선순위 override 전부 정확한 포팅 확인. **원작 자체의 실제 버그 발견**: `GetEmotionsFromString`의 문장시작(CheckStart) 규칙 비교가 `bptr`/`lptr`(다음 문장 위치)를 계산만 하고 실제 비교엔 안 써서, 두 번째 이후 문장의 "Hi"/"You"/"I" 등이 원작에선 절대 매칭되지 않는 죽은 로직이다. 우리 포팅은 이 버그를 재현하지 않고 각 문장 시작마다 정상적으로 검사한다 — 사용자에게 확인한 결과 **현재 상태(버그 미재현) 유지로 확정**, 코드 변경 없음(`docs/phases/01-text-chat-mvp.md`의 "재검증 결과" 절 참고).
   - **Phase 2(아바타 포즈매칭)**: `GetBodyFromEmotion(CEmotionOpts&)`/`GetHeadAndBodyFromEmotion`/`GetBodyIndexFromEmotion`/`Set*Neutral`/`computeComplexBodyBox`/`computeSimpleBodyBox` 전부 원작과 정확히 일치. 이전부터 "Phase 3 이후 재검토 필요"로 남아있던 항목(`m_lastFace`/`m_lastTorso`/`m_lastBody` 갱신 시점을 매칭 즉시로 단순화한 것)을 `panel.cpp`의 `AddLine`/`FetchSpeaker`/`AvatarInPanel`을 직접 대조해 재검토 — `AvatarInPanel(id)`가 참이면 항상 새 패널을 강제해서 현재 화자의 `FetchSpeaker`가 "이미 있음" 조기 반환(=RecordBody 미호출) 분기를 절대 타지 않음을 확인, **문제없음으로 결론**(room.ts 주석과 docs/phases/02 갱신, 코드 변경 없음).

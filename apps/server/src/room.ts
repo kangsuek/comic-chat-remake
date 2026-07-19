@@ -77,11 +77,23 @@ export class Room {
     this.lastSeq = rest.at(-1)?.seq ?? snapshot?.seq ?? 0;
   }
 
-  /** characterId가 카탈로그에 없으면 입장을 거부한다(null 반환). */
+  /**
+   * characterId가 카탈로그에 없거나 닉네임이 이미 이 방에서 쓰이고 있으면 입장을 거부한다(null
+   * 반환) — irc.cpp의 431/432/433(닉/채널 오류) 응답을 포팅: 원작은 조용히 무시하지 않고
+   * TryNewNick()으로 재입력을 요구하므로, 우리도 `send`로 거부 사유를 명시적으로 알려준다.
+   */
   join(nick: string, characterId: string, send: ConnectedClient["send"]): ConnectedClient | null {
-    if (!this.avatarCatalog.has(characterId)) return null;
+    if (!this.avatarCatalog.has(characterId)) {
+      send({ type: "joinRejected", reason: "invalidCharacter" });
+      return null;
+    }
+    const trimmedNick = nick.trim();
+    if (this.isNickTaken(trimmedNick)) {
+      send({ type: "joinRejected", reason: "nickTaken" });
+      return null;
+    }
 
-    const client: ConnectedClient = { actorId: randomUUID(), nick, characterId, send };
+    const client: ConnectedClient = { actorId: randomUUID(), nick: trimmedNick, characterId, send };
     this.clients.set(client.actorId, client);
     this.poseStates.set(client.actorId, { ...INITIAL_POSE_STATE });
     // 서버가 발급한 자기 actorId를 알려준다 — whisper 대상 선택 등에서 "나 자신"을 알아야 한다.
@@ -98,6 +110,41 @@ export class Room {
     if (this.clients.delete(actorId)) {
       this.broadcastMemberList();
     }
+  }
+
+  /**
+   * irc.cpp의 "NICK <newnick>" 명령 + ProcessNick 포팅. 원작은 닉네임 변경을 만화 패널에 전혀
+   * 반영하지 않는다 — `NickEntry`는 세션 로그 재생용일 뿐 `ProcessNick`이 `CPanel`/`AddLine`을
+   * 거치지 않고 멤버 목록만 갱신한다(irc.cpp 확인 완료). 그래서 여기서도 EventStore에 기록하지
+   * 않고 in-memory 멤버 상태만 바꾼 뒤 memberList를 재브로드캐스트한다.
+   */
+  changeNick(actorId: string, newNick: string): void {
+    const client = this.clients.get(actorId);
+    if (!client) return;
+
+    const trimmed = newNick.trim();
+    if (!trimmed) {
+      this.sendTo(actorId, { type: "changeNickRejected", reason: "invalidNick" });
+      return;
+    }
+    if (trimmed === client.nick) return; // 원작 ProcessNick: stricmp로 실제 다를 때만 처리
+    if (this.isNickTaken(trimmed, actorId)) {
+      this.sendTo(actorId, { type: "changeNickRejected", reason: "nickTaken" });
+      return;
+    }
+
+    client.nick = trimmed;
+    this.broadcastMemberList();
+  }
+
+  /** 대소문자 구분 없이 비교한다(IRC 닉네임 관례 — 원작 곳곳의 stricmp 사용과 동일선상). */
+  private isNickTaken(nick: string, excludeActorId?: string): boolean {
+    const normalized = nick.toLowerCase();
+    for (const client of this.clients.values()) {
+      if (client.actorId === excludeActorId) continue;
+      if (client.nick.toLowerCase() === normalized) return true;
+    }
+    return false;
   }
 
   /**

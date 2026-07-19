@@ -40,6 +40,14 @@ describe("clientActionSchema", () => {
     const result = clientActionSchema.safeParse({ type: "whisper", text: "hi" });
     expect(result.success).toBe(false);
   });
+
+  it("changeNick 액션을 허용한다", () => {
+    expect(clientActionSchema.safeParse({ type: "changeNick", newNick: "Bob" }).success).toBe(true);
+  });
+
+  it("빈 changeNick newNick은 거부한다", () => {
+    expect(clientActionSchema.safeParse({ type: "changeNick", newNick: "" }).success).toBe(false);
+  });
 });
 
 describe("serverMessageSchema", () => {
@@ -157,6 +165,17 @@ describe("serverMessageSchema", () => {
 
   it("joined 메시지를 허용한다", () => {
     expect(serverMessageSchema.safeParse({ type: "joined", actorId: "actor-1" }).success).toBe(true);
+  });
+
+  it("joinRejected 메시지를 허용한다", () => {
+    expect(serverMessageSchema.safeParse({ type: "joinRejected", reason: "nickTaken" }).success).toBe(true);
+    expect(serverMessageSchema.safeParse({ type: "joinRejected", reason: "invalidCharacter" }).success).toBe(true);
+    expect(serverMessageSchema.safeParse({ type: "joinRejected", reason: "somethingElse" }).success).toBe(false);
+  });
+
+  it("changeNickRejected 메시지를 허용한다", () => {
+    expect(serverMessageSchema.safeParse({ type: "changeNickRejected", reason: "nickTaken" }).success).toBe(true);
+    expect(serverMessageSchema.safeParse({ type: "changeNickRejected", reason: "invalidNick" }).success).toBe(true);
   });
 
   it("memberList 메시지를 허용한다", () => {

@@ -1,9 +1,10 @@
 import { foldEvents, type SayEvent, type SpeechMode } from "@comic-chat/comic-engine";
 import type { HistoryEntry } from "@comic-chat/protocol";
 import { useMemo, useState } from "react";
+import { avatarAssetUrl } from "../assets";
 import type { AssetCatalogState } from "../useAssetCatalog";
 import { useLocalEmotionPreview } from "../useLocalEmotionPreview";
-import type { RoomConnection } from "../useRoomConnection";
+import type { ChangeNickRejectReason, RoomConnection } from "../useRoomConnection";
 import { PanelCanvas } from "./PanelCanvas";
 
 interface ChatRoomProps {
@@ -26,12 +27,24 @@ const MODE_OPTIONS: { value: SpeechMode; label: string }[] = [
   { value: "action", label: "액션" },
 ];
 
+const CHANGE_NICK_ERROR_MESSAGE: Record<ChangeNickRejectReason, string> = {
+  nickTaken: "이미 사용 중인 닉네임입니다.",
+  invalidNick: "닉네임을 입력해주세요.",
+};
+
 export function ChatRoom({ nick, connection, catalogState }: ChatRoomProps) {
   const [draft, setDraft] = useState("");
   const [mode, setMode] = useState<SpeechMode>("say");
   const [whisperTarget, setWhisperTarget] = useState("");
+  const [nickDraft, setNickDraft] = useState("");
   // 서버 왕복 없이 타이핑 즉시 반응하는 로컬 감정 미리보기(원작 ChatPreSendText의 재현).
   const preview = useLocalEmotionPreview(draft);
+
+  const avatarIconUrl = (characterId: string): string | null => {
+    if (catalogState.status !== "ready") return null;
+    const avatar = catalogState.catalog.avatars.find((a) => a.characterId === characterId);
+    return avatar?.icon ? avatarAssetUrl(characterId, avatar.icon.imagePath) : null;
+  };
 
   // 클라이언트도 서버(Room)와 동일한 foldEvents()를 그대로 돌려 패널 구조를 재구성한다
   // (plan.md: 서버/클라가 같은 워크스페이스 링크로 동일 로직을 공유 — 이원화 방지).
@@ -50,10 +63,32 @@ export function ChatRoom({ nick, connection, catalogState }: ChatRoomProps) {
       <aside>
         <h2>참여자 ({connection.members.length})</h2>
         <ul>
-          {connection.members.map((m) => (
-            <li key={m.actorId}>{m.nick}</li>
-          ))}
+          {connection.members.map((m) => {
+            const iconUrl = avatarIconUrl(m.characterId);
+            return (
+              <li key={m.actorId}>
+                {iconUrl && <img src={iconUrl} alt="" width={20} height={20} />}
+                {m.nick}
+                {m.actorId === connection.selfActorId && " (나)"}
+              </li>
+            );
+          })}
         </ul>
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            const trimmed = nickDraft.trim();
+            if (!trimmed) return;
+            connection.changeNick(trimmed);
+            setNickDraft("");
+          }}
+        >
+          <input value={nickDraft} onChange={(e) => setNickDraft(e.target.value)} placeholder="새 닉네임" />
+          <button type="submit" disabled={nickDraft.trim().length === 0}>
+            닉네임 변경
+          </button>
+          {connection.changeNickError && <p role="alert">{CHANGE_NICK_ERROR_MESSAGE[connection.changeNickError]}</p>}
+        </form>
       </aside>
       <main>
         <div style={{ display: "flex", flexWrap: "wrap", gap: "8px" }}>

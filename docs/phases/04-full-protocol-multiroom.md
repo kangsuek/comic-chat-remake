@@ -22,10 +22,18 @@
 - [x] 단위 테스트 188개(프로토콜 스키마 각 모드 파싱/whisper 검증, `EventStore.loadVisibleTo` 필터링, `Room.say()`의 모드별 브로드캐스트·whisper 한정 브로드캐스트·재접속 시 제3자에게 whisper 비공개 확인).
 - [x] 브라우저 E2E(3개 독립 세션): say/think/action이 시각적으로 뚜렷이 구분됨을 스크린샷으로 확인. whisper(점선+이탤릭)를 보낸 뒤, **관련 없는 제3자 세션에는 그 패널 자체가 아예 안 보이는 것**을 확인 — 서버가 미리 필터링해서 보내므로 클라이언트의 `foldEvents()`가 원작의 "귓속말은 IRC PRIVMSG로 참여자에게만 전달됐다"는 동작을 별도 로직 없이 자연히 재현한다. 콘솔 에러 없음.
 
-### 2단계 — 회원/닉네임 관리
-- [ ] 닉네임 중복 처리(같은 방에 같은 닉네임 입장 거부 또는 자동 접미사)
-- [ ] 닉네임 변경(`changeNick`) 액션 + 이벤트로 기록(히스토리에 "OO님이 XX로 이름을 바꿨습니다" 등 반영 여부 결정)
-- [ ] 멤버 목록 UI 개선(아바타 아이콘 + 닉네임)
+### 2단계 — 회원/닉네임 관리 — 완료 (2026-07-19)
+
+**원본 조사 결과**: `irc.cpp`를 추적해 원작의 실제 동작을 확인했다.
+- 닉네임 중복은 IRC 서버가 `433`(ERR_NICKNAMEINUSE) 응답으로 거부하고, 클라이언트는 `TryNewNick()`으로 재입력 다이얼로그를 띄운다 — **자동 접미사가 아니라 거부 후 재시도**가 원작 동작. 우리도 이 쪽을 채택했다.
+- 닉네임 변경(`NICK` 명령)은 `NickEntry`→`ProcessNick`으로 처리되는데, `ProcessNick`은 **멤버 목록만 갱신**하고 `CPanel`/`AddLine`을 전혀 거치지 않는다 — 즉 원작은 닉네임 변경을 만화 패널에 흔적으로 남기지 않는다("OO님이 XX로 이름을 바꿨습니다" 같은 시스템 메시지 자체가 원작에 없음). `NickEntry`는 세션 로그 재생용일 뿐 코믹 렌더링과 무관하다는 것을 확인하고, 우리도 EventStore에 기록하지 않고 in-memory 멤버 상태만 바꾼 뒤 `memberList`를 재브로드캐스트하도록 구현했다(체크리스트의 "히스토리 반영 여부"는 이 조사 결과로 "반영 안 함"으로 확정).
+- 닉네임 비교는 대소문자를 구분하지 않는다(IRC 관례 + 원작 코드 곳곳의 `stricmp` 사용과 동일선상).
+
+- [x] 프로토콜(`packages/protocol/src/schema.ts`): `changeNick { newNick }` 클라이언트 액션, `joinRejected { reason: nickTaken | invalidCharacter }`/`changeNickRejected { reason: nickTaken | invalidNick }` 서버 메시지 추가.
+- [x] `apps/server/Room`: `join()`에 닉네임 중복(대소문자 무관) 검사 추가 — 기존에는 `characterId` 오류 시에도 완전히 조용히 무시했는데(클라이언트가 영원히 응답을 못 받는 기존 결함), 이번에 `joinRejected` 통지를 붙여 함께 고쳤다. `changeNick(actorId, newNick)` 추가: 빈 문자열/중복 거부, 자기 자신과 같은 닉이면(트림 후) 조용히 무시(원작 `ProcessNick`의 `stricmp` 다름 체크와 동일), 성공 시 `memberList`만 재브로드캐스트.
+- [x] `apps/web`: `App.tsx`가 이제 `joined` 확정 전까지 `NicknameGate`에 머물며 `joinError`를 보여주고 재시도를 받는다(기존엔 join 결과를 기다리지 않고 즉시 화면을 전환해, 거부돼도 사용자가 영문도 모른 채 멈춰있었다). `ChatRoom`에 닉네임 변경 입력창 + 거부 사유 표시 추가, 참여자 목록에 아바타 아이콘 + "(나)" 표시 추가.
+- [x] 단위 테스트 8개 추가(`schema.test.ts` 2개, `room.test.ts` 6개 — 중복 거부, changeNick 성공/중복/빈값/자기자신/존재하지않는actorId, "leave 없이 재접속하면 거부됨"). 워크스페이스 전체 typecheck/lint/test(211개) 클린.
+- [x] 브라우저 E2E(2개 독립 세션): Alice 입장 후 Bob이 같은 닉("alice", 대소문자 다름)으로 입장 시도 → 거부 메시지 확인. Bob으로 정상 입장 후 changeNick으로 "Alice"(중복, 거부) → "Bobby"(성공) 시도 → 양쪽 세션의 참여자 목록이 즉시 갱신되고, 새 만화 패널이 생기지 않음을 확인(원작 `ProcessNick` 동작과 일치). 이후 Bobby가 보낸 새 메시지는 바뀐 닉으로 정상 기록됨. 콘솔 에러 없음.
 
 ### 3단계 — 서버 canonical + 클라이언트 낙관적 업데이트
 - [ ] 클라이언트: 메시지 전송 즉시 로컬에서 `resolveEmotion`+`matchPose`+`foldEvents`를 동일 `comic-engine`으로 실행 → "provisional" 패널 렌더링(임시 ID)

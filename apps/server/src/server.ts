@@ -36,6 +36,12 @@ export function createServer(port: number): WebSocketServer {
       if (action.type === "say") {
         if (!actorId) return; // join 전에는 발화 불가
         room.say(actorId, action.text, action.mode, action.targetActorId);
+        return;
+      }
+
+      if (action.type === "changeNick") {
+        if (!actorId) return; // join 전에는 닉네임 변경 불가
+        room.changeNick(actorId, action.newNick);
       }
     });
 

@@ -45,8 +45,17 @@ const sayActionSchema = z.object({
   targetActorId: z.string().min(1).optional(),
 });
 
+// irc.cpp의 "NICK <newnick>" 클라이언트 명령 포팅. 원작은 서버가 닉 변경을 승인하면 NICK 응답을
+// 돌려보내고(ProcessNick), 이 처리는 멤버 목록만 갱신할 뿐 만화 패널에는 아무 흔적도 남기지
+// 않는다(NickEntry는 세션 로그 재생용이지 CPanel/AddLine을 거치지 않음) — 그래서 이 액션도
+// historyEntry가 아니라 memberList 갱신으로만 반영한다(아래 changeNick 서버 처리 참고).
+const changeNickActionSchema = z.object({
+  type: z.literal("changeNick"),
+  newNick: z.string().min(1).max(32),
+});
+
 export const clientActionSchema = z
-  .discriminatedUnion("type", [joinActionSchema, sayActionSchema])
+  .discriminatedUnion("type", [joinActionSchema, sayActionSchema, changeNickActionSchema])
   .refine((action) => action.type !== "say" || action.mode !== "whisper" || action.targetActorId !== undefined, {
     message: "whisper requires targetActorId",
     path: ["targetActorId"],
@@ -104,8 +113,23 @@ const joinedMessageSchema = z.object({
   actorId: z.string(),
 });
 
+// irc.cpp의 431/432/433(닉네임 오류/중복) 응답 포팅 — 원작은 이 응답을 받으면 TryNewNick()으로
+// 재입력 다이얼로그를 띄운다. 우리도 join이 조용히 무시되지 않도록 거부 사유를 명시적으로 알려준다.
+const joinRejectedMessageSchema = z.object({
+  type: z.literal("joinRejected"),
+  reason: z.enum(["nickTaken", "invalidCharacter"]),
+});
+
+// 원작의 NICK 재요청과 동일한 이유로 거부될 수 있다(같은 방에 이미 있는 닉네임).
+const changeNickRejectedMessageSchema = z.object({
+  type: z.literal("changeNickRejected"),
+  reason: z.enum(["nickTaken", "invalidNick"]),
+});
+
 export const serverMessageSchema = z.discriminatedUnion("type", [
   joinedMessageSchema,
+  joinRejectedMessageSchema,
+  changeNickRejectedMessageSchema,
   historyEntryMessageSchema,
   historyMessageSchema,
   memberListMessageSchema,

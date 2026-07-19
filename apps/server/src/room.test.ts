@@ -63,11 +63,85 @@ describe("Room", () => {
     });
   });
 
-  it("존재하지 않는 characterId는 입장을 거부한다(null 반환)", () => {
+  it("존재하지 않는 characterId는 입장을 거부한다(null 반환 + joinRejected 통지)", () => {
     const alice = collector();
     const client = room.join("Alice", "no-such-character", alice.send);
     expect(client).toBeNull();
+    expect(alice.messages).toEqual([{ type: "joinRejected", reason: "invalidCharacter" }]);
+  });
+
+  it("이미 방에 있는 닉네임(대소문자 무관)으로는 입장을 거부한다", () => {
+    room.join("Alice", "mike-test", () => {});
+    const bob = collector();
+    const client = room.join("aLICE", "tux-test", bob.send);
+    expect(client).toBeNull();
+    expect(bob.messages).toEqual([{ type: "joinRejected", reason: "nickTaken" }]);
+  });
+
+  it("이전 연결이 leave하지 않은 채로는 같은 닉으로 재접속할 수 없다(소켓 close→leave가 join보다 먼저 와야 함)", () => {
+    const bob1 = collector();
+    room.join("Bob", "tux-test", bob1.send);
+    const bob2 = collector();
+    const client = room.join("Bob", "tux-test", bob2.send);
+    expect(client).toBeNull();
+    expect(bob2.messages).toEqual([{ type: "joinRejected", reason: "nickTaken" }]);
+  });
+
+  it("changeNick으로 닉네임을 바꾸면 memberList가 갱신된다(historyEntry는 발생하지 않음)", () => {
+    const alice = collector();
+    const aliceClient = room.join("Alice", "mike-test", alice.send);
+    const bob = collector();
+    room.join("Bob", "tux-test", bob.send);
+
+    alice.messages.length = 0;
+    bob.messages.length = 0;
+    room.changeNick(aliceClient!.actorId, "Alicia");
+
+    expect(alice.messages).toHaveLength(1);
+    expect(alice.messages[0]).toMatchObject({
+      type: "memberList",
+      members: [
+        { nick: "Alicia", characterId: "mike-test" },
+        { nick: "Bob", characterId: "tux-test" },
+      ],
+    });
+    expect(bob.messages).toEqual(alice.messages); // 원작 ProcessNick과 동일하게 만화 패널엔 흔적이 없다
+  });
+
+  it("changeNick이 이미 쓰이는 닉네임이면 거부하고 memberList는 바뀌지 않는다", () => {
+    const alice = collector();
+    const aliceClient = room.join("Alice", "mike-test", alice.send);
+    const bob = collector();
+    room.join("Bob", "tux-test", bob.send);
+
+    alice.messages.length = 0;
+    room.changeNick(aliceClient!.actorId, "bob"); // 대소문자만 다름
+
+    expect(alice.messages).toEqual([{ type: "changeNickRejected", reason: "nickTaken" }]);
+  });
+
+  it("changeNick의 새 닉네임이 공백뿐이면 거부한다", () => {
+    const alice = collector();
+    const aliceClient = room.join("Alice", "mike-test", alice.send);
+    alice.messages.length = 0;
+
+    room.changeNick(aliceClient!.actorId, "   ");
+
+    expect(alice.messages).toEqual([{ type: "changeNickRejected", reason: "invalidNick" }]);
+  });
+
+  it("changeNick에 자기 자신과 같은 닉네임(트림 후 동일)을 주면 조용히 무시한다", () => {
+    const alice = collector();
+    const aliceClient = room.join("Alice", "mike-test", alice.send);
+    alice.messages.length = 0;
+
+    room.changeNick(aliceClient!.actorId, "Alice ");
+
     expect(alice.messages).toHaveLength(0);
+  });
+
+  it("존재하지 않는 actorId로 changeNick하면 아무 일도 일어나지 않는다", () => {
+    expect(() => room.changeNick("no-such-actor", "Whoever")).not.toThrow();
   });
 
   it("두 번째 입장 시 기존 멤버도 갱신된 memberList를 받는다", () => {
@@ -214,6 +288,10 @@ describe("Room", () => {
     // 아니다(Phase 2/3에서 이미 확인된 설계) — Bob이 재접속하면 새 actorId를 받으므로 예전
     // targetActorId와 더 이상 일치하지 않아, 자기가 받았던 whisper라도 재접속 후에는 history에서
     // 사라진다. 영속 계정/식별자가 생기기 전까지는 감수해야 하는 트레이드오프다.
+    // 실제 브라우저에서는 소켓이 끊기면 leave()가 먼저 호출된 뒤에야 재접속의 join()이 들어오므로,
+    // 여기서도 그 순서를 그대로 시뮬레이션한다(Stage 2에서 닉네임 중복 검사가 생겨, leave 없이
+    // 같은 닉으로 다시 join하면 이제는 nickTaken으로 거부된다 — 아래 별도 테스트로 확인).
+    room.leave(bobClient!.actorId);
     const bobAgain = collector();
     room.join("Bob", "tux-test", bobAgain.send);
     const bobHistoryAfterReconnect = bobAgain.messages.find((m) => m.type === "history");
