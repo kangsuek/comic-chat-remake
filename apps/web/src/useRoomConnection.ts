@@ -47,6 +47,9 @@ export function useRoomConnection(url: string): RoomConnection {
       const message = result.data;
       if (message.type === "memberList") {
         setMembers(message.members);
+      } else if (message.type === "history") {
+        // join 직후 한 번, SQLite에 영속화된 이전 대화 전체를 재생해준다(새로고침해도 유지).
+        setEntries(message.entries);
       } else {
         setEntries((prev) => [...prev, message.entry]);
       }

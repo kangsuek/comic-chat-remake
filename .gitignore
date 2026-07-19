@@ -6,3 +6,7 @@ dist/
 .DS_Store
 src-tauri/target/
 .turbo/
+*.db
+*.db-journal
+*.db-wal
+*.db-shm

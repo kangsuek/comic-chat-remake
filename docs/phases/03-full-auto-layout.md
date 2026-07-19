@@ -35,11 +35,14 @@
 - `arrowX` 계산 순서 의존성 발견: 원작은 `DoGreedyOrdering`이 `m_flip`을 먼저 확정한 뒤 `GetDimInfo`를 호출해 arrowX를 구한다(미러링되면 anchor x위치도 반전). Stage 2/3 통합 시 반드시 `doGreedyOrdering()`의 flip 결과를 먼저 얻은 뒤 `arrowXRatio`를 계산해 `layoutBodies()`에 넘겨야 함 — `zoom.ts`의 `BodyDim.arrowXRatio`에 주석으로 명시.
 - 그 외 확인: `UpdateHistoresis`는 배치 끝(맨 왼쪽/오른쪽)에 있는 아바타의 반대쪽 이웃 값을 리셋하지 않고 이전 값을 그대로 남겨두는데(`placement.ts`의 `updateHysteresis`가 이미 이 동작을 정확히 재현), `DoGreedyOrdering`의 매직넘버 `bestRating=1000` 대신 `Infinity`를 쓴 것은 벤치마크상 안전한 의도적 개선(현실적 입력에서 1000을 넘는 rating이 나올 수 있어 더 견고함).
 
-### 2단계 — 이벤트 소싱 백엔드 (`apps/server`)
-- [ ] SQLite(`better-sqlite3`) `events(id, room_id, seq, ts, actor_id, type, payload_json)` append-only 테이블
-- [ ] `room_snapshot` 캐시 테이블(패널 상태), 패널 폭 변경 시 무효화
-- [ ] `foldEvents(events[]): PanelState[]` — comic-engine 순수 함수(서버/클라 공용)
-- [ ] 재접속 시 이벤트 로그 replay로 상태 복구, `Room`을 이 위에 재구성(현재의 인메모리 배열 대체)
+### 2단계 — 이벤트 소싱 백엔드 (`apps/server`) — 완료 (2026-07-19)
+- [x] SQLite(`better-sqlite3`) `events(id, room_id, seq, ts, actor_id, type, payload_json)` append-only 테이블 (`apps/server/src/eventStore.ts`). WAL 모드, `UNIQUE(room_id, seq)`. `payload_json`에 `HistoryEntry` 원문(감정/포즈 등 이미 계산된 값 포함)을 그대로 저장해 replay 시 재계산이 필요 없다.
+- [x] `foldEvents(events[]): FoldResult` — comic-engine 순수 함수(`packages/comic-engine/src/panel/fold.ts`, 서버/클라 공용). 1단계의 `shouldStartNewPanel`/`fetchSpeaker`/`doGreedyOrdering`/`updateHysteresis`를 그대로 재사용해 이벤트 로그를 패널 목록으로 fold. **스코프를 의도적으로 좁혔다**: 줌/픽셀 배치(`zoom.ts`)는 실제 자산 크기가 필요한 렌더링 시점 관심사라 3단계로 미뤘고, `AddTalkTos`(말을 건 상대 자동 합류)는 원작에서 아바타별 지속 선택 상태인데 현재 프로토콜에 addressing 필드가 아직 없어(항상 빈 배열) 지금 불러도 항상 no-op이므로 뺐다 — Phase 4에서 프로토콜에 talkTo가 추가되면 `speakers` 구성부에 이어붙이면 된다.
+- [x] 재접속 시 이벤트 로그 replay로 상태 복구, `Room`을 이 위에 재구성(`apps/server/src/room.ts`). 생성자에서 `EventStore.loadAll()`을 한 번 fold해 복구하고, 이후 `say()`마다 새 이벤트 하나씩 증분 fold(`foldEvents([event], previousFold)`)한다.
+- [x] (체크리스트에 없었지만 이 단계의 실질적 목적을 위해 추가) 새 프로토콜 메시지 `history`(서버→클라, `entries: HistoryEntry[]`)를 `join` 직후 그 클라이언트에게만 전송 — 새로고침/재접속해도 이전 대화가 보이는 것이 이 Phase의 데모 기준(`데모 기준` 섹션 참고)이라 서버 영속화만으로는 부족했다. `apps/web`의 `useRoomConnection`도 이 메시지로 `entries` 초기값을 세팅하도록 수정.
+- [x] 브라우저 E2E로 실제 재접속 replay 확인: Alice로 "SO GREAT!!!"/"hello there" 2줄 발화(2패널 생성) → 페이지 새로고침 → 별도 신규 세션(Bob, 다른 캐릭터)으로 재입장 → 동일한 2패널이 그대로 재구성됨을 스크린샷으로 확인, 콘솔 에러 없음, `apps/server/data/events.db`에 실제 영속화 확인.
+
+**원래 체크리스트에서 뺀 항목과 이유**: `room_snapshot` 캐시 테이블(패널 상태 스냅샷, 폭 변경 시 무효화)은 만들지 않았다. 지금은 방이 `"lobby"` 하나뿐이고 트래픽도 적어, `Room`이 메모리에 들고 있는 `FoldResult`를 증분 갱신하는 것만으로 캐시 테이블과 동일한 효과(매 요청마다 전체 로그를 다시 fold하지 않음)를 얻으면서 무효화 로직 자체가 필요 없어진다(SQLite `events`가 유일한 source of truth, 메모리 캐시는 항상 최신 이벤트로만 갱신되므로 stale해질 수가 없다). CLAUDE.md의 "필요한 것만 만든다" 원칙에 따른 의도적 축소이며, Phase 4에서 멀티룸 규모가 커지면 재검토한다.
 
 ### 3단계 — 말풍선 랜덤화 + Konva 커스텀 모양
 - [ ] `estimateBalloonSize(text, freeRect, rng)` — 문자 수 기반 폭 근사 + 확정된 랜덤 공식(짧으면 고정, 길면 minWidth~maxWidth 랜덤)

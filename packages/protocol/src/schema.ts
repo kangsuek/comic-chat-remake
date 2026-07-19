@@ -66,6 +66,13 @@ const historyEntryMessageSchema = z.object({
   entry: historyEntrySchema,
 });
 
+// join 직후 한 번, 지금까지 쌓인 이벤트 로그를 통째로 재생하기 위해 보낸다(SQLite 영속화 도입 —
+// Phase 3 2단계). 새로고침/재접속해도 이전 대화가 유지되는 것이 이 메시지의 목적.
+const historyMessageSchema = z.object({
+  type: z.literal("history"),
+  entries: z.array(historyEntrySchema),
+});
+
 const memberListMessageSchema = z.object({
   type: z.literal("memberList"),
   members: z.array(memberSchema),
@@ -73,6 +80,7 @@ const memberListMessageSchema = z.object({
 
 export const serverMessageSchema = z.discriminatedUnion("type", [
   historyEntryMessageSchema,
+  historyMessageSchema,
   memberListMessageSchema,
 ]);
 export type ServerMessage = z.infer<typeof serverMessageSchema>;

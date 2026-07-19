@@ -1,6 +1,7 @@
 import type { AvatarManifest } from "@comic-chat/asset-manifest-types";
 import type { ServerMessage } from "@comic-chat/protocol";
 import { beforeEach, describe, expect, it } from "vitest";
+import { EventStore } from "./eventStore.js";
 import { Room } from "./room.js";
 
 function collector() {
@@ -45,15 +46,17 @@ describe("Room", () => {
   let room: Room;
 
   beforeEach(() => {
-    room = new Room(testCatalog);
+    // 매 테스트마다 격리된 인메모리 DB를 써서 이전 테스트의 이벤트가 새지 않게 한다.
+    room = new Room(testCatalog, new EventStore(":memory:"), "test-room");
   });
 
-  it("join 시 memberList가 브로드캐스트된다", () => {
+  it("join 시 history(빈 배열)와 memberList가 순서대로 브로드캐스트된다", () => {
     const alice = collector();
     room.join("Alice", "mike-test", alice.send);
 
-    expect(alice.messages).toHaveLength(1);
-    expect(alice.messages[0]).toMatchObject({
+    expect(alice.messages).toHaveLength(2);
+    expect(alice.messages[0]).toEqual({ type: "history", entries: [] });
+    expect(alice.messages[1]).toMatchObject({
       type: "memberList",
       members: [{ nick: "Alice", characterId: "mike-test" }],
     });
@@ -144,5 +147,38 @@ describe("Room", () => {
       type: "memberList",
       members: [{ nick: "Bob", characterId: "tux-test" }],
     });
+  });
+
+  it("나중에 입장한 사람도 join 시 이전 대화 전체를 history로 받는다(재접속 replay)", () => {
+    const alice = collector();
+    const aliceClient = room.join("Alice", "mike-test", alice.send);
+    room.say(aliceClient!.actorId, "first");
+    room.say(aliceClient!.actorId, "second");
+
+    const bob = collector();
+    room.join("Bob", "tux-test", bob.send);
+
+    const historyMsg = bob.messages[0];
+    expect(historyMsg?.type).toBe("history");
+    expect(historyMsg?.type === "history" && historyMsg.entries.map((e) => e.text)).toEqual(["first", "second"]);
+  });
+
+  it("서버 재시작(같은 EventStore로 Room을 다시 생성)해도 대화 로그가 그대로 복구된다", () => {
+    const sharedStore = new EventStore(":memory:");
+    const before = new Room(testCatalog, sharedStore, "restart-room");
+    const aliceBefore = before.join("Alice", "mike-test", () => {});
+    before.say(aliceBefore!.actorId, "SO GREAT!!!");
+
+    const after = new Room(testCatalog, sharedStore, "restart-room");
+    const bob = collector();
+    after.join("Bob", "tux-test", bob.send);
+
+    const historyMsg = bob.messages[0];
+    expect(historyMsg?.type === "history" && historyMsg.entries).toMatchObject([
+      { text: "SO GREAT!!!", emotion: { emotion: "SHOUT" } },
+    ]);
+    // fold도 이벤트 로그 전체를 replay해 동일한 패널 구조로 복구됐는지 확인
+    expect(after.getPanels()).toHaveLength(1);
+    expect(after.getPanels()[0]!.balloons).toHaveLength(1);
   });
 });

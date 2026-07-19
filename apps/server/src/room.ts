@@ -1,16 +1,28 @@
 import { randomUUID } from "node:crypto";
+import path from "node:path";
 import type { AvatarManifest } from "@comic-chat/asset-manifest-types";
 import {
   defaultRuleDefinitions,
+  foldEvents,
   loadRules,
   matchComplexPose,
   matchSimplePose,
   resolveEmotion,
   type EmotionCandidate,
+  type FoldResult,
+  type Panel,
   type RuleSet,
+  type SayEvent,
 } from "@comic-chat/comic-engine";
 import type { HistoryEntry, Member, PoseSelection, ServerMessage } from "@comic-chat/protocol";
 import { loadAvatarCatalog } from "./avatarCatalog.js";
+import { EventStore } from "./eventStore.js";
+
+const DEFAULT_DB_PATH = path.resolve(import.meta.dirname, "../data/events.db");
+
+function toSayEvent(entry: HistoryEntry): SayEvent {
+  return { actorId: entry.actorId, characterId: entry.characterId, mode: entry.type, text: entry.text, pose: entry.pose };
+}
 
 export interface ConnectedClient {
   actorId: string;
@@ -30,17 +42,29 @@ const INITIAL_POSE_STATE: PoseState = { lastFaceIndex: -1, lastTorsoIndex: -1, l
 
 /**
  * 단일 room("lobby")의 멤버/이벤트 로그를 관리한다.
- * 인메모리 배열로 이벤트를 쌓는다 — 영속화(SQLite)는 Phase 3에서 도입한다.
+ * 이벤트는 SQLite(EventStore)에 append-only로 영속화되고, 방 상태(패널 목록)는 항상 그 로그의
+ * foldEvents 순수 fold로 도출된다(plan.md의 이벤트소싱 설계). 서버 재시작 시 생성자에서
+ * 기존 로그 전체를 한 번 fold해 복구하고, 이후에는 새 이벤트 하나씩 증분 fold한다 — 두 경로가
+ * 항상 같은 결과를 내는지는 fold.test.ts(comic-engine)와 room.test.ts의 재접속 시나리오로 검증한다.
  */
 export class Room {
   private readonly rules: RuleSet = loadRules(defaultRuleDefinitions);
   private readonly avatarCatalog: Map<string, AvatarManifest>;
   private readonly clients = new Map<string, ConnectedClient>();
   private readonly poseStates = new Map<string, PoseState>();
-  private readonly eventLog: HistoryEntry[] = [];
+  private readonly eventStore: EventStore;
+  private readonly roomId: string;
+  private fold: FoldResult;
 
-  constructor(avatarCatalog: Map<string, AvatarManifest> = loadAvatarCatalog()) {
+  constructor(
+    avatarCatalog: Map<string, AvatarManifest> = loadAvatarCatalog(),
+    eventStore: EventStore = new EventStore(DEFAULT_DB_PATH),
+    roomId = "lobby",
+  ) {
     this.avatarCatalog = avatarCatalog;
+    this.eventStore = eventStore;
+    this.roomId = roomId;
+    this.fold = foldEvents(this.eventStore.loadAll(roomId).map(toSayEvent));
   }
 
   /** characterId가 카탈로그에 없으면 입장을 거부한다(null 반환). */
@@ -50,6 +74,8 @@ export class Room {
     const client: ConnectedClient = { actorId: randomUUID(), nick, characterId, send };
     this.clients.set(client.actorId, client);
     this.poseStates.set(client.actorId, { ...INITIAL_POSE_STATE });
+    // 새로고침/재접속해도 이전 대화가 이어지도록, 지금까지의 로그를 이 클라이언트에게만 재생한다.
+    send({ type: "history", entries: this.eventStore.loadAll(this.roomId) });
     this.broadcastMemberList();
     return client;
   }
@@ -82,13 +108,19 @@ export class Room {
       pose,
       ts: Date.now(),
     };
-    this.eventLog.push(entry);
+    this.eventStore.append(this.roomId, entry);
+    this.fold = foldEvents([toSayEvent(entry)], this.fold);
     this.broadcast({ type: "historyEntry", entry });
     return entry;
   }
 
   getMembers(): Member[] {
     return [...this.clients.values()].map((c) => ({ actorId: c.actorId, nick: c.nick, characterId: c.characterId }));
+  }
+
+  /** Stage 3(Konva 다중 body 패널 렌더링)에서 소비할 지점. 지금은 아직 아무도 읽지 않는다. */
+  getPanels(): readonly Panel[] {
+    return this.fold.panels;
   }
 
   /**

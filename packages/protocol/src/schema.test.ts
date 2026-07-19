@@ -76,6 +76,27 @@ describe("serverMessageSchema", () => {
     expect(result.success).toBe(true);
   });
 
+  it("history 메시지(빈 배열 포함)를 허용한다", () => {
+    expect(serverMessageSchema.safeParse({ type: "history", entries: [] }).success).toBe(true);
+
+    const result = serverMessageSchema.safeParse({
+      type: "history",
+      entries: [
+        {
+          type: "say",
+          actorId: "actor-1",
+          nick: "Alice",
+          text: "hi",
+          emotion: null,
+          characterId: "mike",
+          pose: { kind: "simple", bodyIndex: 0 },
+          ts: 1234567890,
+        },
+      ],
+    });
+    expect(result.success).toBe(true);
+  });
+
   it("memberList 메시지를 허용한다", () => {
     const result = serverMessageSchema.safeParse({
       type: "memberList",
