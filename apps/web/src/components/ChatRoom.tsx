@@ -6,7 +6,7 @@ import type { AssetCatalogState } from "../useAssetCatalog";
 import { useLocalEmotionPreview } from "../useLocalEmotionPreview";
 import { useOptimisticSay } from "../useOptimisticSay";
 import type { ChangeNickRejectReason, RoomConnection } from "../useRoomConnection";
-import { PanelCanvas } from "./PanelCanvas";
+import { DEFAULT_BACKDROP_ID, PanelCanvas } from "./PanelCanvas";
 
 interface ChatRoomProps {
   nick: string;
@@ -38,6 +38,10 @@ export function ChatRoom({ nick, connection, catalogState }: ChatRoomProps) {
   const [mode, setMode] = useState<SpeechMode>("say");
   const [whisperTarget, setWhisperTarget] = useState("");
   const [nickDraft, setNickDraft] = useState("");
+  const [roomDraft, setRoomDraft] = useState("");
+  // backdrop.cpp 조사 결과 배경은 서버로 전송되지 않는 순수 클라이언트 취향이라(PanelCanvas.tsx
+  // 주석 참고) 로컬 state로만 관리한다 — 방을 옮겨도 유지되는 "내 화면 설정"이다.
+  const [backdropId, setBackdropId] = useState(DEFAULT_BACKDROP_ID);
   // 서버 왕복 없이 타이핑 즉시 반응하는 로컬 감정 미리보기(원작 ChatPreSendText의 재현).
   const preview = useLocalEmotionPreview(draft);
 
@@ -69,6 +73,36 @@ export function ChatRoom({ nick, connection, catalogState }: ChatRoomProps) {
 
   return (
     <div>
+      <header>
+        <h1>방: {connection.currentRoomId}</h1>
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            const trimmed = roomDraft.trim();
+            if (!trimmed) return;
+            connection.switchRoom(trimmed);
+            setRoomDraft("");
+          }}
+        >
+          <input value={roomDraft} onChange={(e) => setRoomDraft(e.target.value)} placeholder="옮겨갈 방 이름" />
+          <button type="submit" disabled={roomDraft.trim().length === 0}>
+            방 이동
+          </button>
+          {connection.switchRoomError && <p role="alert">이미 사용 중인 닉네임이라 그 방으로 이동할 수 없습니다.</p>}
+        </form>
+        {catalogState.status === "ready" && (
+          <label>
+            배경:{" "}
+            <select value={backdropId} onChange={(e) => setBackdropId(e.target.value)}>
+              {catalogState.catalog.backdrops.map((b) => (
+                <option key={b.backdropId} value={b.backdropId}>
+                  {b.name}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
+      </header>
       <aside>
         <h2>참여자 ({connection.members.length})</h2>
         <ul>
@@ -103,7 +137,7 @@ export function ChatRoom({ nick, connection, catalogState }: ChatRoomProps) {
         <div style={{ display: "flex", flexWrap: "wrap", gap: "8px" }}>
           {fold.panels.map((panel, i) =>
             catalogState.status === "ready" ? (
-              <PanelCanvas key={i} panel={panel} actorNicks={actorNicks} catalog={catalogState.catalog} />
+              <PanelCanvas key={i} panel={panel} actorNicks={actorNicks} catalog={catalogState.catalog} backdropId={backdropId} />
             ) : (
               <p key={i}>{panel.balloons.map((b) => `${actorNicks.get(b.speakerActorId) ?? "?"}: ${b.text}`).join(" / ")}</p>
             ),

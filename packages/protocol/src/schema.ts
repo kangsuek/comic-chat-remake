@@ -28,10 +28,14 @@ export type PoseSelection = z.infer<typeof poseSelectionSchema>;
 
 // ---- 클라이언트 → 서버 액션 ----
 
+// irc.cpp의 JOIN 명령 포팅: 존재하지 않는 채널에 JOIN하면 서버가 그 자리에서 새로 만든다
+// (별도 "방 생성" 명령이 원작에 없음) — 그래서 roomId는 "입장 또는 생성"을 겸한다.
+// 생략 시 "lobby"로 취급해 Phase 1~4 3단계까지의 단일 방 클라이언트와 호환된다.
 const joinActionSchema = z.object({
   type: z.literal("join"),
   nick: z.string().min(1).max(32),
   characterId: z.string().min(1),
+  roomId: z.string().min(1).max(64).default("lobby"),
 });
 
 // mode 생략 시 "say"로 취급(Phase 1~3 클라이언트와의 최소 호환). whisper는 targetActorId가
@@ -60,8 +64,27 @@ const changeNickActionSchema = z.object({
   newNick: z.string().min(1).max(32),
 });
 
+// irc.cpp의 ChatSwitchChannel 포팅: 원작은 채널을 바꾸면 문서를 통째로 새로 열어(ID_FILE_NEW)
+// 만화를 처음부터 다시 시작한다 — 우리도 이전 방은 나가고(leave) 새 방에 같은 닉/캐릭터로
+// 다시 입장한다(server.ts). 새 방에서 닉이 이미 쓰이고 있으면 join과 동일하게 거부될 수 있다.
+const switchRoomActionSchema = z.object({
+  type: z.literal("switchRoom"),
+  roomId: z.string().min(1).max(64),
+});
+
+// irc.cpp의 "LIST" 명령(RPL_LIST/RPL_LISTEND) 포팅 — 현재 사람이 있는 방 목록을 요청한다.
+const listRoomsActionSchema = z.object({
+  type: z.literal("listRooms"),
+});
+
 export const clientActionSchema = z
-  .discriminatedUnion("type", [joinActionSchema, sayActionSchema, changeNickActionSchema])
+  .discriminatedUnion("type", [
+    joinActionSchema,
+    sayActionSchema,
+    changeNickActionSchema,
+    switchRoomActionSchema,
+    listRoomsActionSchema,
+  ])
   .refine((action) => action.type !== "say" || action.mode !== "whisper" || action.targetActorId !== undefined, {
     message: "whisper requires targetActorId",
     path: ["targetActorId"],
@@ -113,12 +136,15 @@ const memberListMessageSchema = z.object({
   members: z.array(memberSchema),
 });
 
-// join 성공 시 그 클라이언트에게만 한 번 보낸다 — 서버가 발급한 자기 actorId를 알려준다(예:
-// 클라이언트가 memberList에서 "이 중 어떤 게 나인지" 닉네임만으로 추측할 필요가 없어짐,
-// whisper 대상 목록에서 자기 자신을 제외할 때도 필요).
+// join(또는 switchRoom) 성공 시 그 클라이언트에게만 한 번 보낸다 — 서버가 발급한 자기 actorId와
+// 지금 들어와 있는 roomId를 알려준다(예: 클라이언트가 memberList에서 "이 중 어떤 게 나인지"
+// 닉네임만으로 추측할 필요가 없어짐, whisper 대상 목록에서 자기 자신을 제외할 때도 필요,
+// switchRoom 후에는 이 메시지로 "새 방으로 전환 완료"를 알아채고 이전 방의 entries/members를
+// 비운다).
 const joinedMessageSchema = z.object({
   type: z.literal("joined"),
   actorId: z.string(),
+  roomId: z.string(),
 });
 
 // irc.cpp의 431/432/433(닉네임 오류/중복) 응답 포팅 — 원작은 이 응답을 받으면 TryNewNick()으로
@@ -134,10 +160,32 @@ const changeNickRejectedMessageSchema = z.object({
   reason: z.enum(["nickTaken", "invalidNick"]),
 });
 
+// switchRoom이 거부되면(새 방에서 닉 중복) 원래 방 소속은 그대로 유지된다 — 클라이언트는 이
+// 메시지를 받으면 화면 전환 없이 오류만 보여주면 된다.
+const switchRoomRejectedMessageSchema = z.object({
+  type: z.literal("switchRoomRejected"),
+  reason: z.literal("nickTaken"),
+});
+
+const roomSummarySchema = z.object({
+  roomId: z.string(),
+  memberCount: z.number().int().min(0),
+});
+export type RoomSummary = z.infer<typeof roomSummarySchema>;
+
+// listRoomsActionSchema에 대한 응답 — 원작 LIST 명령(RPL_LIST 반복 + RPL_LISTEND)을 배열 하나로
+// 뭉쳐서 돌려준다(우리는 요청-응답 한 번으로 충분, 스트리밍할 이유가 없음).
+const roomListMessageSchema = z.object({
+  type: z.literal("roomList"),
+  rooms: z.array(roomSummarySchema),
+});
+
 export const serverMessageSchema = z.discriminatedUnion("type", [
   joinedMessageSchema,
   joinRejectedMessageSchema,
   changeNickRejectedMessageSchema,
+  switchRoomRejectedMessageSchema,
+  roomListMessageSchema,
   historyEntryMessageSchema,
   historyMessageSchema,
   memberListMessageSchema,

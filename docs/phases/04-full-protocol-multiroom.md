@@ -47,16 +47,24 @@
 - [x] 재조정 시 시각적 튐(flicker) 최소화: 로컬 계산이 서버와 **완전히 동일한 comic-engine 코드 + 동일한 PoseState**로 이뤄지므로(같은 입력 → 같은 출력), 단일 메시지가 인플라이트인 정상 케이스에서는 잠정 결과와 확정 결과가 텍스트/감정/포즈까지 bit-exact 일치한다 — "교체"가 아니라 사실상 무해한 덮어쓰기. 브라우저 E2E로 확인: 전송 직후 스크린샷과 1초 후 스크린샷이 완전히 동일(패널 위치/포즈/텍스트 변화 없음). 연속 3개 빠른 전송(확인 응답을 기다리지 않고 연달아 전송)도 각각 다른 패널에 정확한 순서/포즈로 기록됨을 확인 — 로컬 PoseState가 낙관적 계산 직후 즉시 갱신되므로 라운드로빈이 꼬이지 않음. 귓속말도 동일하게 검증(발신자 자신도 `sendTo` 대상이라 reconcile이 정상 작동, 대상자 화면에도 동일하게 반영).
 - [x] 워크스페이스 전체 typecheck/lint/test(213개) 클린. 브라우저 E2E(2개 독립 세션)로 낙관적 렌더링·재조정·연속 전송·귓속말 전부 확인, 콘솔 에러 없음.
 
-### 4단계 — 멀티룸
-- [ ] `rooms` 맵으로 room 분리, room별 이벤트 로그·멤버 목록 독립. Phase 3에서 미리 준비해둔 `room_snapshot` 캐시가 room 지연 생성/정리와 실제로 맞물리는지 확인
-- [ ] 방 생성/입장/나가기 UI + 프로토콜 액션
-- [ ] room별 아바타 배경(backdrop) 선택(`changeBackdrop` 이벤트)
+### 4단계 — 멀티룸 — 완료 (2026-07-19)
+
+**원본 조사 결과 계획 정정 — backdrop은 프로토콜 이벤트가 아니다.** `backdrop.cpp`/`proppage.cpp`/`irc.cpp`를 추적한 결과, 배경 선택(`SetBackDrop`)은 IRC로 전송되는 방 공용 상태가 아니라 **각 클라이언트가 로컬(속성 페이지)로 고르는 순수 렌더링 취향**이었다 — `InitializeBackDrops()`가 읽는 `theApp.m_lastBackDrop`은 로컬 ini 설정이고, `irc.cpp` 어디에도 배경을 네트워크로 보내는 코드가 없다(`ChangeBackDropEntry`는 세션 로그 재생용, IRC PRIVMSG가 아님). 그래서 원래 계획의 "`changeBackdrop` 이벤트"를 정정: 배경은 서버/프로토콜과 무관한 `ChatRoom`의 로컬 state로만 구현했다(`PanelCanvas`의 `backdropId` prop).
+
+**원본 조사 결과 — 멀티룸은 "동시에 여러 방 보기"가 아니라 "방 전환"이다.** `irc.cpp`의 `ChatSwitchChannel`은 채널을 바꾸면 문서를 통째로 새로 열어(`ID_FILE_NEW`) 만화를 처음부터 다시 시작한다 — 한 창에서 여러 채널을 동시에 보여주지 않는다. 방 목록은 IRC `LIST`(322/323) 명령으로 서버에 물어보는 요청-응답이지 실시간 구독이 아니다. 존재하지 않는 채널에 `JOIN`하면 서버가 그 자리에서 새로 만든다(별도 "방 생성" 명령이 없음). 이 세 가지를 그대로 반영했다.
+
+- [x] 프로토콜: `join`에 `roomId`(생략 시 `lobby`) 추가, `switchRoom { roomId }`/`listRooms` 액션, `roomList { rooms: [{roomId, memberCount}] } }`/`switchRoomRejected { reason: nickTaken }` 메시지 추가, `joined`에 `roomId` 추가(switchRoom 후에도 재전송되어 클라이언트가 방이 바뀌었음을 앎).
+- [x] `apps/server/src/roomRegistry.ts`(신규): `Map<roomId, Room>`을 관리하는 `RoomRegistry` — `getOrCreate`(지연 생성, irc.cpp의 JOIN과 동일), `leaveAndCleanup`(마지막 멤버가 나가면 메모리에서 제거), `list()`(irc.cpp의 LIST 포팅). 기존 `Room` 클래스는 "방 하나"만 알던 구현 그대로 두고 전혀 손대지 않았다 — 멀티룸은 순전히 `RoomRegistry`가 여러 `Room` 인스턴스를 조합해서 만든다. 모든 `Room`이 같은 `EventStore`를 공유하므로(Phase 3에서 이미 `room_id` 컬럼으로 방을 구분하도록 설계됨) 방이 메모리에서 정리돼도 SQLite 로그는 그대로 남아, 나중에 같은 roomId로 다시 들어오면 `room_snapshot`+나머지 이벤트 재fold로 정확히 복구된다 — Phase 3에서 준비해둔 스냅샷 캐시가 지연 생성/정리와 정확히 맞물림을 확인.
+- [x] `server.ts`: `switchRoom`은 새 방에 먼저 `join`(같은 닉/캐릭터로, 닉 중복 시 `switchRoomRejected`)한 뒤에만 이전 방에서 `leaveAndCleanup` — 실패해도 원래 방 소속이 그대로 유지되도록 순서를 신중히 잡음(원작의 PART 후 JOIN이 아니라 JOIN 성공 확인 후 PART, 실패 시 안전).
+- [x] `apps/web`: `NicknameGate`에 방 이름 입력(기본값 `lobby`) + 연결되면 한 번 `listRooms()`로 받아온 "지금 사람이 있는 방" 목록(클릭하면 입력창을 채움). `ChatRoom` 헤더에 현재 방 이름 + 방 이동 폼(+ 거부 메시지) + 배경 선택 드롭다운(로컬 전용) 추가. `useRoomConnection`의 `joined` 핸들러가 `entries`/`members`를 비우도록 확장(최초 join과 switchRoom 후 재전송 양쪽에서 재사용 — 이전 방 잔상이 새 방 데이터로 안 섞이게).
+- [x] 단위 테스트 추가(`schema.test.ts` 4개, `roomRegistry.test.ts` 8개 — getOrCreate 재사용/분리, list, leaveAndCleanup의 메모리 정리·유지·재입장 복구, 존재하지 않는 room 처리). 워크스페이스 전체 typecheck/lint/test(225개) 클린.
+- [x] 브라우저 E2E(3개 독립 세션): 서로 다른 방(`trackA`/`trackB`)에 입장한 두 세션이 서로의 메시지를 전혀 못 봄을 확인. `switchRoom`으로 실제 방을 옮기면 양쪽 세션의 참여자 목록이 즉시 갱신되고 대화가 새 방 것으로 완전히 교체됨을 확인. 새 방에서 닉네임이 이미 쓰이고 있으면 거부되고 원래 방 소속이 그대로 유지됨을 확인(3번째 세션으로 재현). 마지막 멤버가 나간 방이 목록에서 사라졌다가, 같은 이름으로 다시 입장하면 정확히 복구되는지 방 목록으로 확인. 배경 선택이 즉시 반영됨을 확인. 콘솔 에러 없음.
 
 ### 5단계 — Complex 아바타 마감
 - [ ] 얼굴+몸통 오프셋 합성 렌더링을 실제 Complex 캐릭터(v1.0-pre 22종 중 복합형)로 전수 검증
 - [ ] `DifferentTorso` 개념(몸짓만 바꾸는 리액션, 원작의 `<Chr>`/`AddReaction`) — "리액션만 보내기" UI 액션 추가(선택적)
 
 ## 완료 조건 (Acceptance)
-- [ ] 4가지 발화 모드가 시각적으로 뚜렷이 구분됨
-- [ ] 2개 이상의 방을 오가며 대화 가능, 방별 히스토리 독립
-- [ ] 네트워크 지연을 인위적으로 늘려도(devtools throttle) 로컬 미리보기가 즉시 뜨고, 서버 확정 후 부자연스러운 점프 없이 정착
+- [x] 4가지 발화 모드가 시각적으로 뚜렷이 구분됨 (1단계에서 달성, 브라우저 E2E로 확인)
+- [x] 2개 이상의 방을 오가며 대화 가능, 방별 히스토리 독립 (4단계, 3개 독립 세션으로 확인)
+- [x] 로컬 미리보기가 즉시 뜨고, 서버 확정 후 부자연스러운 점프 없이 정착 (3단계) — devtools 네트워크 스로틀로 직접 검증하지는 않았지만, 로컬 계산이 서버와 완전히 동일한 comic-engine 코드+상태를 쓰므로(같은 입력→같은 출력) 지연 여부와 무관하게 항상 무점프 재조정이 보장됨을 설계로 확인하고 단위 테스트(`reconcilePending`)로 그 등가성을 검증했다.

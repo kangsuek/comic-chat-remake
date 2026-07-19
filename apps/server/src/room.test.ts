@@ -55,7 +55,7 @@ describe("Room", () => {
     const client = room.join("Alice", "mike-test", alice.send);
 
     expect(alice.messages).toHaveLength(3);
-    expect(alice.messages[0]).toEqual({ type: "joined", actorId: client!.actorId });
+    expect(alice.messages[0]).toEqual({ type: "joined", actorId: client!.actorId, roomId: "test-room" });
     expect(alice.messages[1]).toEqual({ type: "history", entries: [] });
     expect(alice.messages[2]).toMatchObject({
       type: "memberList",

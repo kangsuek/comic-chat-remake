@@ -2,9 +2,22 @@ import { describe, expect, it } from "vitest";
 import { clientActionSchema, serverMessageSchema } from "./schema.js";
 
 describe("clientActionSchema", () => {
-  it("join 액션을 허용한다", () => {
+  it("join 액션을 허용한다(roomId 생략 시 lobby로 취급)", () => {
     const result = clientActionSchema.safeParse({ type: "join", nick: "Alice", characterId: "mike" });
     expect(result.success).toBe(true);
+    if (result.success && result.data.type === "join") expect(result.data.roomId).toBe("lobby");
+  });
+
+  it("join 액션에 roomId를 지정할 수 있다", () => {
+    const result = clientActionSchema.safeParse({ type: "join", nick: "Alice", characterId: "mike", roomId: "game-room" });
+    expect(result.success).toBe(true);
+    if (result.success && result.data.type === "join") expect(result.data.roomId).toBe("game-room");
+  });
+
+  it("switchRoom/listRooms 액션을 허용한다", () => {
+    expect(clientActionSchema.safeParse({ type: "switchRoom", roomId: "other-room" }).success).toBe(true);
+    expect(clientActionSchema.safeParse({ type: "switchRoom", roomId: "" }).success).toBe(false);
+    expect(clientActionSchema.safeParse({ type: "listRooms" }).success).toBe(true);
   });
 
   it("say 액션을 허용한다(mode 생략 시 say로 취급)", () => {
@@ -188,8 +201,9 @@ describe("serverMessageSchema", () => {
     expect(result.success).toBe(true);
   });
 
-  it("joined 메시지를 허용한다", () => {
-    expect(serverMessageSchema.safeParse({ type: "joined", actorId: "actor-1" }).success).toBe(true);
+  it("joined 메시지는 actorId와 roomId를 모두 요구한다", () => {
+    expect(serverMessageSchema.safeParse({ type: "joined", actorId: "actor-1", roomId: "lobby" }).success).toBe(true);
+    expect(serverMessageSchema.safeParse({ type: "joined", actorId: "actor-1" }).success).toBe(false);
   });
 
   it("joinRejected 메시지를 허용한다", () => {
@@ -201,6 +215,20 @@ describe("serverMessageSchema", () => {
   it("changeNickRejected 메시지를 허용한다", () => {
     expect(serverMessageSchema.safeParse({ type: "changeNickRejected", reason: "nickTaken" }).success).toBe(true);
     expect(serverMessageSchema.safeParse({ type: "changeNickRejected", reason: "invalidNick" }).success).toBe(true);
+  });
+
+  it("switchRoomRejected 메시지를 허용한다", () => {
+    expect(serverMessageSchema.safeParse({ type: "switchRoomRejected", reason: "nickTaken" }).success).toBe(true);
+  });
+
+  it("roomList 메시지(빈 배열 포함)를 허용한다", () => {
+    expect(serverMessageSchema.safeParse({ type: "roomList", rooms: [] }).success).toBe(true);
+    expect(
+      serverMessageSchema.safeParse({ type: "roomList", rooms: [{ roomId: "lobby", memberCount: 3 }] }).success,
+    ).toBe(true);
+    expect(
+      serverMessageSchema.safeParse({ type: "roomList", rooms: [{ roomId: "lobby", memberCount: -1 }] }).success,
+    ).toBe(false);
   });
 
   it("memberList 메시지를 허용한다", () => {

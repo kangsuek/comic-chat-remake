@@ -19,7 +19,7 @@ import type { HistoryEntry, Member, ServerMessage } from "@comic-chat/protocol";
 import { loadAvatarCatalog } from "./avatarCatalog.js";
 import { EventStore } from "./eventStore.js";
 
-const DEFAULT_DB_PATH = path.resolve(import.meta.dirname, "../data/events.db");
+export const DEFAULT_DB_PATH = path.resolve(import.meta.dirname, "../data/events.db");
 
 function toSayEvent(entry: HistoryEntry): SayEvent {
   return { actorId: entry.actorId, characterId: entry.characterId, mode: entry.mode, text: entry.text, pose: entry.pose };
@@ -87,8 +87,9 @@ export class Room {
     const client: ConnectedClient = { actorId: randomUUID(), nick: trimmedNick, characterId, send };
     this.clients.set(client.actorId, client);
     this.poseStates.set(client.actorId, createInitialPoseState());
-    // 서버가 발급한 자기 actorId를 알려준다 — whisper 대상 선택 등에서 "나 자신"을 알아야 한다.
-    send({ type: "joined", actorId: client.actorId });
+    // 서버가 발급한 자기 actorId와 지금 들어온 roomId를 알려준다 — whisper 대상 선택 등에서
+    // "나 자신"을 알아야 하고, switchRoom 후에는 이 메시지로 클라이언트가 방이 바뀌었음을 안다.
+    send({ type: "joined", actorId: client.actorId, roomId: this.roomId });
     // 새로고침/재접속해도 이전 대화가 이어지도록, 지금까지의 로그를 이 클라이언트에게만 재생한다.
     // loadVisibleTo가 이 클라이언트가 관련 없는 whisper를 걸러준다(EventStore 참고).
     send({ type: "history", entries: this.eventStore.loadVisibleTo(this.roomId, client.actorId) });

@@ -9,12 +9,20 @@ import { AvatarSprite } from "./AvatarSprite";
 import { SpeechBubble } from "./SpeechBubble";
 
 // chat.rc의 IDS_DEFAULT_BACKDROP("room8bs")과 동일한 기본 배경.
-const DEFAULT_BACKDROP_ID = "room8bs";
+export const DEFAULT_BACKDROP_ID = "room8bs";
 
 interface PanelCanvasProps {
   panel: Panel;
   actorNicks: ReadonlyMap<string, string>;
   catalog: AssetCatalog;
+  /**
+   * backdrop.cpp의 SetBackDrop 포팅 지점 — 원작을 조사해보니 배경 선택은 IRC로 전송되는 방
+   * 공용 상태가 아니라 각 클라이언트가 로컬(proppage.cpp의 속성 페이지)로 고르는 순수 렌더링
+   * 취향이었다(irc.cpp 어디에도 배경을 네트워크로 보내는 코드가 없음, InitializeBackDrops가
+   * theApp.m_lastBackDrop이라는 로컬 ini 설정만 읽음). 그래서 여기서도 서버/프로토콜 이벤트가
+   * 아니라 클라이언트 전용 prop으로만 받는다(ChatRoom의 로컬 state).
+   */
+  backdropId?: string;
 }
 
 /**
@@ -24,8 +32,8 @@ interface PanelCanvasProps {
  * 좌우 순서/flip만 정확히 반영). 말풍선 폭/위치 계산은 ../panelBalloonLayout.ts로 뽑아내
  * React/Konva 없이도 재현성(같은 패널 내용 → 같은 배치)을 테스트할 수 있게 했다.
  */
-export function PanelCanvas({ panel, actorNicks, catalog }: PanelCanvasProps) {
-  const backdrop = catalog.backdrops.find((b) => b.backdropId === DEFAULT_BACKDROP_ID) ?? catalog.backdrops[0];
+export function PanelCanvas({ panel, actorNicks, catalog, backdropId = DEFAULT_BACKDROP_ID }: PanelCanvasProps) {
+  const backdrop = catalog.backdrops.find((b) => b.backdropId === backdropId) ?? catalog.backdrops[0];
   const backdropImg = useImage(backdrop ? backdropAssetUrl(backdrop.imagePath) : null);
 
   const colWidth = PANEL_WIDTH / Math.max(1, panel.bodies.length);

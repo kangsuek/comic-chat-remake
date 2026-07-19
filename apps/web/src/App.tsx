@@ -17,7 +17,9 @@ export default function App() {
         status={connection.status}
         catalogState={catalogState}
         joinError={connection.joinError}
-        onSubmit={(chosenNick, characterId) => connection.join(chosenNick, characterId)}
+        rooms={connection.rooms}
+        onRequestRoomList={connection.listRooms}
+        onSubmit={(chosenNick, characterId, roomId) => connection.join(chosenNick, characterId, roomId)}
       />
     );
   }
