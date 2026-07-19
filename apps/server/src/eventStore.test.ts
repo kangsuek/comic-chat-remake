@@ -42,4 +42,38 @@ describe("EventStore", () => {
   it("이벤트가 없는 room은 빈 배열을 돌려준다", () => {
     expect(store.loadAll("empty-room")).toEqual([]);
   });
+
+  it("append는 room 안에서 1부터 증가하는 seq를 돌려준다", () => {
+    expect(store.append("lobby", entry("alice", "1", 100))).toBe(1);
+    expect(store.append("lobby", entry("bob", "2", 200))).toBe(2);
+    expect(store.append("other-room", entry("carol", "3", 300))).toBe(1); // room마다 독립적
+  });
+
+  it("loadSince는 주어진 seq보다 큰 이벤트만(경계값 제외) 돌려준다", () => {
+    store.append("lobby", entry("alice", "1", 100));
+    store.append("lobby", entry("bob", "2", 200));
+    store.append("lobby", entry("alice", "3", 300));
+
+    expect(store.loadSince("lobby", 0).map((e) => ({ seq: e.seq, text: e.entry.text }))).toEqual([
+      { seq: 1, text: "1" },
+      { seq: 2, text: "2" },
+      { seq: 3, text: "3" },
+    ]);
+    expect(store.loadSince("lobby", 1).map((e) => e.entry.text)).toEqual(["2", "3"]);
+    expect(store.loadSince("lobby", 3)).toEqual([]); // 마지막 seq와 같으면 아무것도 없음
+  });
+
+  it("스냅샷이 없으면 loadSnapshot이 null을 돌려준다", () => {
+    expect(store.loadSnapshot("lobby")).toBeNull();
+  });
+
+  it("saveSnapshot/loadSnapshot이 왕복하고, 같은 room에 다시 저장하면 덮어쓴다", () => {
+    const stateA = { panels: [{ bodies: [], balloons: [] }], hysteresis: {} };
+    store.saveSnapshot("lobby", 2, stateA);
+    expect(store.loadSnapshot("lobby")).toEqual({ seq: 2, state: stateA });
+
+    const stateB = { panels: [], hysteresis: { alice: { lastDir: true, lastRight: null, lastLeft: null } } };
+    store.saveSnapshot("lobby", 5, stateB);
+    expect(store.loadSnapshot("lobby")).toEqual({ seq: 5, state: stateB });
+  });
 });

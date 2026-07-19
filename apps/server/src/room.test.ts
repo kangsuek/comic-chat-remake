@@ -1,5 +1,5 @@
 import type { AvatarManifest } from "@comic-chat/asset-manifest-types";
-import type { ServerMessage } from "@comic-chat/protocol";
+import type { HistoryEntry, ServerMessage } from "@comic-chat/protocol";
 import { beforeEach, describe, expect, it } from "vitest";
 import { EventStore } from "./eventStore.js";
 import { Room } from "./room.js";
@@ -180,5 +180,45 @@ describe("Room", () => {
     // fold도 이벤트 로그 전체를 replay해 동일한 패널 구조로 복구됐는지 확인
     expect(after.getPanels()).toHaveLength(1);
     expect(after.getPanels()[0]!.balloons).toHaveLength(1);
+  });
+
+  it("join만으로는 스냅샷이 생기지 않고, say() 후에는 마지막 seq로 저장된다", () => {
+    const sharedStore = new EventStore(":memory:");
+    const room = new Room(testCatalog, sharedStore, "snapshot-room");
+    const alice = room.join("Alice", "mike-test", () => {})!;
+
+    expect(sharedStore.loadSnapshot("snapshot-room")).toBeNull();
+
+    room.say(alice.actorId, "hi");
+    expect(sharedStore.loadSnapshot("snapshot-room")).toMatchObject({ seq: 1 });
+
+    room.say(alice.actorId, "second"); // 같은 화자 연속 발화라 새 패널이 되지만 seq는 계속 증가
+    expect(sharedStore.loadSnapshot("snapshot-room")).toMatchObject({ seq: 2 });
+  });
+
+  it("생성자가 스냅샷을 실제로 fold의 시작점으로 쓴다(스냅샷 이전 이벤트는 다시 fold하지 않음)", () => {
+    const sharedStore = new EventStore(":memory:");
+    const e1: HistoryEntry = {
+      type: "say",
+      actorId: "alice",
+      nick: "Alice",
+      text: "first",
+      emotion: null,
+      characterId: "mike-test",
+      pose: { kind: "complex", faceIndex: 0, torsoIndex: 0 },
+      ts: 100,
+    };
+    const e2: HistoryEntry = { ...e1, text: "second", ts: 200 };
+    sharedStore.append("snap-room", e1);
+    sharedStore.append("snap-room", e2);
+    // 일부러 "e1이 없었던 것처럼" 빈 상태를 seq=1 스냅샷으로 저장한다.
+    sharedStore.saveSnapshot("snap-room", 1, { panels: [], hysteresis: {} });
+
+    const room = new Room(testCatalog, sharedStore, "snap-room");
+
+    // 전체 로그를 처음부터 다시 fold했다면 두 패널(첫 발화가 설정샷 규칙으로 새 패널)이 나와야
+    // 하지만, 스냅샷(seq=1, 빈 상태)을 기준으로 e2만 fold했으므로 e1은 패널 구조에 반영되지 않는다.
+    expect(room.getPanels()).toHaveLength(1);
+    expect(room.getPanels()[0]!.balloons).toEqual([{ speakerActorId: "alice", text: "second", mode: "say" }]);
   });
 });

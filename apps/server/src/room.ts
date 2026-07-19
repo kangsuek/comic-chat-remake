@@ -43,9 +43,10 @@ const INITIAL_POSE_STATE: PoseState = { lastFaceIndex: -1, lastTorsoIndex: -1, l
 /**
  * 단일 room("lobby")의 멤버/이벤트 로그를 관리한다.
  * 이벤트는 SQLite(EventStore)에 append-only로 영속화되고, 방 상태(패널 목록)는 항상 그 로그의
- * foldEvents 순수 fold로 도출된다(plan.md의 이벤트소싱 설계). 서버 재시작 시 생성자에서
- * 기존 로그 전체를 한 번 fold해 복구하고, 이후에는 새 이벤트 하나씩 증분 fold한다 — 두 경로가
- * 항상 같은 결과를 내는지는 fold.test.ts(comic-engine)와 room.test.ts의 재접속 시나리오로 검증한다.
+ * foldEvents 순수 fold로 도출된다(plan.md의 이벤트소싱 설계). 생성자는 room_snapshot(있으면)
+ * 이후분만 재fold해 복구하고, 이후에는 매 이벤트마다 증분 fold + 스냅샷 갱신을 함께 한다 —
+ * "스냅샷+나머지 재fold" 경로와 "전체 재fold" 경로가 항상 같은 결과를 내는지는
+ * fold.test.ts(comic-engine)와 room.test.ts의 재접속/스냅샷 시나리오로 검증한다.
  */
 export class Room {
   private readonly rules: RuleSet = loadRules(defaultRuleDefinitions);
@@ -55,6 +56,7 @@ export class Room {
   private readonly eventStore: EventStore;
   private readonly roomId: string;
   private fold: FoldResult;
+  private lastSeq: number;
 
   constructor(
     avatarCatalog: Map<string, AvatarManifest> = loadAvatarCatalog(),
@@ -64,7 +66,14 @@ export class Room {
     this.avatarCatalog = avatarCatalog;
     this.eventStore = eventStore;
     this.roomId = roomId;
-    this.fold = foldEvents(this.eventStore.loadAll(roomId).map(toSayEvent));
+
+    // room_snapshot이 있으면 그 이후분만 재fold한다(오래 지속된 방을 매번 처음부터
+    // 전부 fold하지 않도록 — 멀티룸에서 room을 지연 생성/정리하게 될 때를 대비).
+    const snapshot = this.eventStore.loadSnapshot(roomId);
+    const base = snapshot?.state ?? { panels: [], hysteresis: {} };
+    const rest = this.eventStore.loadSince(roomId, snapshot?.seq ?? 0);
+    this.fold = foldEvents(rest.map((r) => toSayEvent(r.entry)), base);
+    this.lastSeq = rest.at(-1)?.seq ?? snapshot?.seq ?? 0;
   }
 
   /** characterId가 카탈로그에 없으면 입장을 거부한다(null 반환). */
@@ -108,8 +117,9 @@ export class Room {
       pose,
       ts: Date.now(),
     };
-    this.eventStore.append(this.roomId, entry);
+    this.lastSeq = this.eventStore.append(this.roomId, entry);
     this.fold = foldEvents([toSayEvent(entry)], this.fold);
+    this.eventStore.saveSnapshot(this.roomId, this.lastSeq, this.fold);
     this.broadcast({ type: "historyEntry", entry });
     return entry;
   }
