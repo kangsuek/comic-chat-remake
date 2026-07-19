@@ -7,48 +7,58 @@
 ## 선행 조건
 - Phase 2 완료 (아바타 렌더링 파이프라인)
 
-## 작업 목록
+## 0. 스파이크 결과 (완료 — 2026-07-18, `panel.cpp`/`balloon.cpp` 정독)
 
-### 0. 스파이크 — 패널 클론-확장 상태 모델
-- [ ] "현재 패널(mutable draft)" vs "확정된 패널(불변 스냅샷)" 데이터 모델을 먼저 프로토타입하고, 이벤트소싱 replay 결과와 실시간 증분 업데이트 결과가 항상 동일함을 확인하는 작은 스크립트 작성
+`v1.0-pre/client/panel.cpp`(`AddLine`/`LayoutAvatars`/`LayoutBalloons`/`EvalPair`/`EvalPlacement`/`GetCloudEstimate` 등)와 `balloon.cpp`(`AreaEstimate`/`SetBBox`)를 직접 추적해 아래 내용을 확정했다. 상세 코드 근거는 각 함수명으로 원본 검색.
 
-### 1. 이벤트 소싱 백엔드 (`apps/server`)
-- [ ] SQLite(`better-sqlite3`) 도입: `events(id, room_id, seq, ts, actor_id, type, payload_json)` append-only 테이블
-- [ ] `room_snapshot` 캐시 테이블 (패널 상태), 패널 폭 변경 시 무효화
-- [ ] `foldEvents(events[]): PanelState[]` — `comic-engine`의 순수 함수로 구현 (서버 전용 아님, 클라도 재사용)
-- [ ] 재접속 시 이벤트 로그 replay로 상태 복구
+- **패널 클론 조건이 plan.md 초안과 반대였다.** `AddLine`의 실제 새 패널 강제 조건은 `mode==ACTION`, 현재 패널 요소≥5, 전체 패널 수<2, **또는 발화자가 이미 이 패널에 있음**(`AvatarInPanel`)이다. → **같은 화자가 연속 발화하면 새 패널이 시작되고, 클론(이어붙임)은 아직 이 패널에 없던 새 화자가 대화에 끼어들 때** 일어난다("여러 사람이 한 장면에 모이는" 패널). 클론 시 이전 패널은 `RemoveLastPanel()`+`delete`로 버려지고 클론본이 그 자리를 대체한다 — "확정된 패널은 불변, 교체될 뿐"이라는 스파이크 가정이 확인됨.
+- **패널 생성 첫 2개는 "설정샷"이다.** `Establishing()`이 `panels.count<=1`이거나 `(방금 새로 만든 패널이 아니고) count<=2`일 때 true를 돌려주며, 이때 `LayoutAvatars`의 줌인 단계를 건너뛴다(캐릭터가 작게 나와 장면을 넓게 보여줌).
+- **줌은 별도 함수가 아니라 `LayoutAvatars` 내부에** 있다: 신장 정규화 → 폭 초과 시 축소 → establishing이 아니면 `zoomFactor=min(unitWidth/sumWidth, maxBodyHeight/(maxHeadHeight*1.2))`로 확대(머리 안 잘림 보장) → **1.1배 미만이면 1.0으로 스냅**.
+- **그리디 배치 상수 확정**(`EvalPair`): talkTo 없이 세상을 향해 말할 때 안 보면+4/상대가 안 보면+2; 특정 상대에게 말할 때 그쪽을 보면 +4×(거리-1), 안 보면 +40(중벌점), 상대가 날 안 보면 +4. `DoGreedyOrdering`은 화자를 하나씩 모든 삽입 위치×양방향에 넣어보며(`EvalPlacement`) 최저 페널티 채택, 동점이면 그 아바타의 `m_lastDir` 유지. `AddTalkTos`가 talkTo 대상을 최대 5명까지 자동으로 채워 넣는다. `UpdateHistoresis`가 배치 후 `m_lastDir`/`m_lastRight`/`m_lastLeft`를 갱신(다음 패널의 히스테리시스 페널티 기준이 됨).
+- **말풍선 크기 추정에서 죽은 코드를 발견, plan.md 정정.** `GetCloudEstimate`의 `canBeTall` 분기는 `NoneToLeft()` 호출이 주석 처리되어 있어 **항상 TRUE** — "짧으면 1줄, 길면 1~3줄 랜덤"이라던 `else` 분기는 절대 실행되지 않는 죽은 코드다. 실제 라이브 동작: 텍스트 폭이 `ONELINETHRESHOLD`(500) 이하면 그대로 한 줄 폭, 초과하면 `potentialHeight`(이전 말풍선들 중 가장 낮은 하단 ~ 패널 하단)를 기준으로 `minWidth = area/potentialHeight`(최소 단어 폭 이상 보장)를 구하고, **`minWidth`~`maxWidth` 사이 랜덤 폭**을 목표로 삼는다. X 위치는 화자의 `arrowX`(머리/팔 근처 앵커) 기준 `[arrowX-goalWidth, arrowX]` 범위에서 랜덤 — 항상 arrowX를 말풍선이 덮도록 보장.
+- **route-region(꼬리 경로) 충돌 회피는 계획대로 포팅하지 않는다.** `GetInterveningBBox`/`Dock`/`AdjustRouteRgns`는 스플라인 좌표계에 강하게 결합된 복잡한 기하 로직이라, 더 단순한 "이전 말풍선들과 겹치면 아래로/옆으로 밀어내는" 현대적 충돌 회피로 재구현한다(원작 느낌 재현이 목표, 픽셀 동일 재현은 비목표 — plan.md에 이미 명시됨).
+- **텍스트 폭 측정**: 원작은 실제 GDI `GetTextExtent`(폰트 메트릭)를 쓰지만, 서버에는 DOM/Canvas가 없다. 문자 수 기반 근사 폭 추정으로 대체한다(Phase 1/2에서 이미 쓰던 방식과 동일선상).
+- **시드/랜덤 모델**: 원작은 레이아웃 결정(`AddLine` 시점, `randfloat()`)과 그리기(`Draw` 시점, `srand(m_seed)`)가 분리되어 있고 레이아웃 자체는 전역 `rand()` 스트림에 의존한다 — 재현성이 필요한 건 우리 쪽 요구사항(새로고침 후 replay)이지 원작 그대로 포팅할 메커니즘이 아니다. **우리는 이벤트별로 결정을 한 번 계산해 이벤트 payload에 저장하고, replay는 재계산 없이 저장된 값을 그대로 fold한다**(plan.md의 기존 설계 그대로, 원작 rand()/srand() 알고리즘을 흉내 낼 필요 없음).
 
-### 2. 패널 생성/클론 로직 (`packages/comic-engine/src/panel/`)
-- [ ] `shouldStartNewPanel(currentPanel, speakerId, mode): boolean` — 강제(액션), 요소 ≥5개, 패널 <2개, 발화자 이미 존재 조건 포팅 (`panel.cpp`의 `AddLine` 앞부분)
-- [ ] `clonePanel(panel): Panel` — 깊은 복사 (bodies + balloons, speaker 참조 재연결)
-- [ ] `addLineToPanel(panel, line, rng): Panel | LayoutFailure` — 실패 시 상위에서 새 패널로 재시도(백트래킹)하는 구조로 설계
+## 작업 단계 (4단계로 진행, 각 단계 후 확인)
 
-### 3. 캐릭터 그리디 배치 (`packages/comic-engine/src/panel/placement.ts`)
-- [ ] `addTalkTos()`: 발화자의 `talkTo` 목록을 최대 5명까지 패널에 포함 (`panel.cpp`의 `AddTalkTos`)
-- [ ] `evalPair(b1, b2, deltaPlacement)`: 방향/거리 페널티 계산 — 상대를 안 보면 +40, 거리비례 +4×(거리-1), 상대가 날 안 보면 +4 (원작 상수 그대로 포팅)
-- [ ] `evalPlacement()`/`doGreedyOrdering()`: 모든 삽입 위치×양방향에 대해 `evalPlacement` 합산 최소값 선택, 동점 시 `lastDir`로 타이브레이크
-- [ ] `updateHysteresis()`: 배치 후 각 아바타의 `lastRight/lastLeft/lastDir` 갱신 (다음 패널 배치에 영향)
-- [ ] 단위 테스트: 다양한 talkTo 그래프/인원수 조합 퍼징 (예외/NaN 없는지만 체크), 골든파일 스냅샷 몇 개
+### 1단계 — 패널 클론/그리디 배치/줌 (`packages/comic-engine/src/panel/`) — 완료 (2026-07-19)
+- [x] `shouldStartNewPanel(currentPanel, speakerId, mode, totalPanelCount): boolean` — 위에서 확정한 5개 조건 포팅 (`panel.ts`)
+- [x] `clonePanel(panel): Panel` — bodies + balloons 깊은 복사. actorId 문자열 참조 설계 덕에 원작의 "speaker 포인터 재연결" 문제 자체가 없어져 `structuredClone`으로 충분 (`types.ts`)
+- [x] `addTalkTos()`/`evalPair()`/`evalPlacement()`/`doGreedyOrdering()`/`updateHysteresis()` — 확정된 상수·알고리즘 그대로 포팅, `m_priority`는 죽은 필드로 확인되어 미포팅 (`placement.ts`)
+- [x] `computeZoom()` → `layoutBodies()` + `isEstablishing(panelCount, justCreatedNewPanel)` — `LayoutAvatars`의 신장 정규화/축소/확대/1.1배 스냅/마진 배치 로직 분리 포팅. `AdjustArtToCoord`(패널 카메라 뷰포트 이동)는 렌더링 계층 관심사로 판단해 미포팅 — Stage 3에서 필요시 별도 처리 (`zoom.ts`)
+- [x] 단위 테스트 84개 전부 통과 (`panel.test.ts` 9, `placement.test.ts` 9, `zoom.test.ts` 12 — zoom 스냅 경계값 1.09/1.10/1.11배 포함). talkTo 그래프 퍼징·골든파일 스냅샷은 Stage 2(이벤트 소싱)와 결합해 Stage 4에서 다룬다.
 
-### 4. 줌 로직
-- [ ] `computeZoom(bodies, panelSize): number` — 최대 신장 정규화, 폭 초과 시 축소, establishing shot 아니면 머리 안 잘리는 한도까지 줌인, 1.1배 미만 변화는 1.0 스냅
+**재검증 결과(2026-07-19)** — `panel.cpp`(`FetchSpeaker`/`ReplaceBody`/`AvatarInPanel`/`AddTalkTos`/`ComputeDisplacementPenalty`/`DoGreedyOrdering`/`UpdateHistoresis`)와 `avatar.cpp`(`GetDimInfo`)를 라인 단위로 재대조. 알고리즘 자체는 전부 일치 확인, 통합 시 놓치기 쉬운 세부사항 3건을 코드 주석으로 보강:
+- `zoomIn`은 원작이 `#define zoomIn TRUE`(SIGGRAPH 데모 빌드에서만 FALSE)인 컴파일타임 상수 — 실질 조건은 사실상 `!establishing`뿐. `zoom.ts`의 `ZoomLayoutInput.zoomIn`에 주석으로 명시(향후 사용자 설정 여지는 남기되, 원작 재현 시 항상 true).
+- `normHeight`는 `GetDimInfo`가 Simple/Complex 두 아바타 타입 모두에서 100으로 하드코딩(`rec->normHeight`는 주석 처리된 죽은 필드) — "캐릭터별 키 차이"가 실제로는 반영되지 않는다. `zoom.ts`의 `BodyDim.normHeight`에 주석 추가.
+- `arrowX` 계산 순서 의존성 발견: 원작은 `DoGreedyOrdering`이 `m_flip`을 먼저 확정한 뒤 `GetDimInfo`를 호출해 arrowX를 구한다(미러링되면 anchor x위치도 반전). Stage 2/3 통합 시 반드시 `doGreedyOrdering()`의 flip 결과를 먼저 얻은 뒤 `arrowXRatio`를 계산해 `layoutBodies()`에 넘겨야 함 — `zoom.ts`의 `BodyDim.arrowXRatio`에 주석으로 명시.
+- 그 외 확인: `UpdateHistoresis`는 배치 끝(맨 왼쪽/오른쪽)에 있는 아바타의 반대쪽 이웃 값을 리셋하지 않고 이전 값을 그대로 남겨두는데(`placement.ts`의 `updateHysteresis`가 이미 이 동작을 정확히 재현), `DoGreedyOrdering`의 매직넘버 `bestRating=1000` 대신 `Infinity`를 쓴 것은 벤치마크상 안전한 의도적 개선(현실적 입력에서 1000을 넘는 rating이 나올 수 있어 더 견고함).
 
-### 5. 말풍선 크기/위치 + route-region 충돌 회피
-- [ ] `estimateBalloonSize(text, freeRect, rng)`: 텍스트 길이 기반, 짧으면 1줄, 길면 1~3줄 목표 랜덤 산정 (`ONELINETHRESHOLD` 상수 이식)
-- [ ] `positionBalloon(anchorX, goalWidth, freeRect, rng)`: 화자의 arrowX 앵커 근처 랜덤 배치, 가용 공간으로 클램프
-- [ ] **스파이크**: route-region(말풍선 꼬리 경로) 충돌 회피 알고리즘 프로토타입 — 원작 스플라인 수식은 포팅하지 않고, 랜덤 둥근 말풍선 + 꼬리를 Canvas 경로로 재구현. 여러 화자가 있는 패널 몇 개로 눈으로 검증 후 본 엔진에 편입
-- [ ] 말풍선이 패널에 안 들어가면 텍스트 강제 분할 후 다음 패널로 이어붙임 (`leftOver` 메커니즘)
-- [ ] `SpeechBubble` 컴포넌트를 `Konva.Shape`의 `sceneFunc` 커스텀 경로로 교체 (Phase 2의 단순 버전 대체)
+### 2단계 — 이벤트 소싱 백엔드 (`apps/server`)
+- [ ] SQLite(`better-sqlite3`) `events(id, room_id, seq, ts, actor_id, type, payload_json)` append-only 테이블
+- [ ] `room_snapshot` 캐시 테이블(패널 상태), 패널 폭 변경 시 무효화
+- [ ] `foldEvents(events[]): PanelState[]` — comic-engine 순수 함수(서버/클라 공용)
+- [ ] 재접속 시 이벤트 로그 replay로 상태 복구, `Room`을 이 위에 재구성(현재의 인메모리 배열 대체)
 
-### 6. 시드 기반 재현성
-- [ ] 패널 생성 시 시드 고정(`m_seed` 개념 포팅), 모든 랜덤 함수가 시드 PRNG를 인자로 받도록 강제
-- [ ] 랜덤 레이아웃 "결정 결과"(말풍선 폭/위치, 줌 스냅 값, 배치 순서)를 이벤트 payload에 함께 저장 → replay는 순수 fold(재계산 없이 저장된 값 사용)로 bit-exact 보장
+### 3단계 — 말풍선 랜덤화 + Konva 커스텀 모양
+- [ ] `estimateBalloonSize(text, freeRect, rng)` — 문자 수 기반 폭 근사 + 확정된 랜덤 공식(짧으면 고정, 길면 minWidth~maxWidth 랜덤)
+- [ ] `positionBalloon(anchorX, goalWidth, freeRect, rng)` — arrowX 기준 랜덤 배치 + 클램프
+- [ ] 단순화된 충돌 회피(겹치면 아래로 밀기) 프로토타입 → 여러 화자 패널로 육안 검증
+- [ ] 말풍선이 안 들어가면 텍스트 강제 분할 + 다음 패널로 이어붙임(`leftOver`)
+- [ ] `SpeechBubble`을 `Konva.Shape`의 `sceneFunc` 커스텀 경로(둥근 구름 테두리 + 꼬리)로 교체
+
+### 4단계 — 시드 기반 재현성 + 전체 검증
+- [ ] 이벤트 payload에 랜덤 결정 결과(말풍선 폭/위치, 줌 값, 배치 순서/방향) 저장
+- [ ] replay가 저장된 값을 그대로 사용(재계산 없음)함을 테스트로 증명
+- [ ] 브라우저 새로고침 E2E로 이벤트소싱 replay가 새로고침 전과 동일한 배치/포즈/텍스트를 만드는지 확인
 
 ## 완료 조건 (Acceptance)
-- [ ] 같은 화자가 연속 발화 시 패널이 클론되어 이어붙는 것이 시각적으로 확인됨
+- [ ] 대화방에 여러 사람이 번갈아 말하면 한 패널에 모이고(클론), 같은 사람이 연속 말하면 새 패널이 시작됨이 시각적으로 확인됨(원작 실제 동작 — 위 스파이크 결과 참고)
 - [ ] A가 B에게 말을 걸면(talkTo) B를 향해 캐릭터가 자동으로 방향을 바꿈
 - [ ] 여러 말풍선이 겹치지 않고, 크기가 메시지마다 랜덤하게 다름
 - [ ] 브라우저 새로고침 후 서버에서 replay한 만화가 새로고침 전과 픽셀 단위는 아니어도 배치/포즈/텍스트가 동일함 (JSON 비교로 검증)
 
 ## 리스크 / 메모
 - 이 단계가 전체 프로젝트에서 가장 알고리즘 난이도가 높음. 필요시 그리디 배치는 최대 5명 제한이라 O(n²) 브루트포스로 충분 — 성능 최적화는 불필요.
+- 텍스트 폭 측정이 근사치이므로 말풍선 크기가 원작과 픽셀 단위로 다를 수 있음(비목표로 이미 합의됨).
